@@ -4,8 +4,8 @@ server:
 spring:
   data:
     redis:
-      host: 35.203.149.35
-      port: 6379
+      host: localhost
+      port: 6383
       password: "pk2258"
 
   profiles:
@@ -16,7 +16,7 @@ spring:
       fail-on-empty-beans: false
 
   datasource:
-    url: jdbc:mysql://35.203.149.35:3306/awsTestDb?useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3307/awsTestDb?useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: pk2258
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -26,7 +26,7 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: create
     show-sql: false
     database-platform: org.hibernate.dialect.MySQL8Dialect
 
@@ -39,8 +39,7 @@ spring:
 
   mail:
     host: smtp.gmail.com # Gmail SMTP 서버 호스트
-    port: 465 # Gmail SMTP 포트 (SSL을 사용할 경우 465)
-    username: bid.system.info@gmail.com # 이메일 발송에 사용할 Gmail 주소
+    port: 465 # Gmail SMTP 포트 (SSL을 사용할 경우 465)   username: bid.system.info@gmail.com # 이메일 발송에 사용할 Gmail 주소
     password: tskqfpdczojlwfbh # 구글 앱 비밀번호 (2단계 인증 시 필요)
     protocol: smtps # 이메일 전송에 사용할 프로토콜 (smtps는 SSL 보안 사용)
 
