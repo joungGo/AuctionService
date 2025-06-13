@@ -65,3 +65,9 @@ logging:
 
 springdoc:
   default-produces-media-type: application/json;charset=UTF-8
+
+origin:
+    ip:
+        frontend: 
+            - http://localhost:3000
+            - http://43.203.21.172:3000
