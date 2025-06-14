@@ -25,6 +25,9 @@ repositories {
 
 dependencies {
 
+    // email
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
     // JJWT 최신 버전 (0.12.6) 추가
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
@@ -51,8 +54,6 @@ dependencies {
     implementation 'org.springframework.session:spring-session-data-redis'
 
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
-
-    implementation 'org.springframework.boot:spring-boot-starter-mail'
 }
 
 tasks.named('test') {
