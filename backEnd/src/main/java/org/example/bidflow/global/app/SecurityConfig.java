@@ -1,5 +1,7 @@
 package org.example.bidflow.global.app;
 
+import lombok.RequiredArgsConstructor;
+import org.example.bidflow.global.config.OriginConfig;
 import org.example.bidflow.global.filter.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +19,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final OriginConfig originConfig;
 
     // 비밀번호 인코더
     @Bean
@@ -48,8 +53,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.addAllowedOrigin("http://localhost:3000");
-        configuration.addAllowedOrigin("http://35.203.149.35:3000");
+        originConfig.getFrontend().forEach(configuration::addAllowedOrigin);
         configuration.addAllowedHeader("*");
         configuration.addAllowedMethod("*");
         configuration.setAllowCredentials(true);
