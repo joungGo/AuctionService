@@ -4,7 +4,7 @@ server:
 spring:
   data:
     redis:
-      host: 43.203.21.172
+      host: localhost
       port: 6383
       password: "pk2258"
 
@@ -16,7 +16,7 @@ spring:
       fail-on-empty-beans: false
 
   datasource:
-    url: jdbc:mysql://43.203.21.172:3307/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3307/localAuctionDb?useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: pk2258
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -57,7 +57,7 @@ springdoc:
   default-produces-media-type: application/json;charset=UTF-8
 
 origin:
-    ip:
-        frontend: 
-            - http://localhost:3000
-            - http://43.203.21.172:3000
+  ip:
+    frontend:
+      - http://localhost:3000
+      - http://43.203.21.172:3000
