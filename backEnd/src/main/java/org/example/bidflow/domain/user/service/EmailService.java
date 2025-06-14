@@ -70,9 +70,10 @@ public class EmailService {
 
             helper.setText(text, true); // HTML 이메일 전송 설정
             mailSender.send(message);
-            log.error("Send verification code failed: {}", email);
+            log.info("Verification code sent successfully to: {}", email);
 
         } catch (Exception e) {
+            log.error("Failed to send verification code to: {}", email, e);
             throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.value() + "", "이메일 전송 중 오류가 발생했습니다.");
         }
     }
@@ -94,12 +95,12 @@ public class EmailService {
             redisCommon.putInHash(hashKey, "vertify", "true");
             redisCommon.setExpireAt(hashKey, LocalDateTime.now().plusSeconds(EMAIL_AUTH_EXPIRATION));
 
-            log.error("Verification code matched for email(인증 코드 불일치): {}", email);
+            log.info("Verification code matched for email(인증 코드 일치): {}", email);
 
             return true;
         }
 
-        log.error("Verification code does not match for email(뭔가 문제가 생김(인증은 통과)): {}", email);
+        log.error("Verification code does not match for email(인증 코드 불일치): {}", email);
 
         return false;
     }
