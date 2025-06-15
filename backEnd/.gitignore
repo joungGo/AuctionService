@@ -42,3 +42,5 @@ db_dev.trace.db
 
 ### Spring Boot ###
 /src/main/resources/application-dev.yml
+/logs/*
+/logs
