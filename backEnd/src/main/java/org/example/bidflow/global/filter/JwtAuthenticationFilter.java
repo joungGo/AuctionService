@@ -1,10 +1,16 @@
 package org.example.bidflow.global.filter;
 
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.UnsupportedJwtException;
+import io.jsonwebtoken.security.SecurityException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.user.service.JwtBlacklistService;
 import org.example.bidflow.global.exception.ServiceException;
 import org.example.bidflow.global.utils.JwtProvider;
@@ -18,6 +24,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -34,9 +41,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
 
         if (token != null) {
-
+            try {
                 // 블랙리스트 확인
                 if (jwtBlacklistService.isBlacklisted(token)) {
+                    log.warn("[JWT 필터] 블랙리스트 토큰 접근 시도: {}", token.substring(0, Math.min(20, token.length())));
                     throw new ServiceException(HttpStatus.UNAUTHORIZED.value() + "", "로그아웃한 토큰으로 접근할 수 없습니다.");
                 }
 
@@ -45,7 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     // 토큰에서 필요한 정보 추출
                     String username = jwtProvider.getUsername(token);
                     String role = jwtProvider.parseRole(token);  // 👉 role 추출
-                    System.out.println("Extracted Role: " + role);
+                    log.debug("[JWT 필터] 토큰 검증 성공 - 사용자: {}, 역할: {}", username, role);
 
                     // 직접 UserDetails 생성
                     UserDetails userDetails = org.springframework.security.core.userdetails.User.builder()
@@ -54,17 +62,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             .authorities(new SimpleGrantedAuthority(role)) // 권한 설정
                             .build();
 
-                    System.out.println("Authorities: " + userDetails.getAuthorities());
-
                     // 인증 객체 생성
                     UsernamePasswordAuthenticationToken authenticationToken =
                             new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
 
                     // SecurityContextHolder에 인증 정보 등록
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                } else {
+                    log.warn("[JWT 필터] 토큰 유효성 검증 실패: {}", token.substring(0, Math.min(20, token.length())));
+                    throw new ServiceException(HttpStatus.UNAUTHORIZED.value() + "", "유효하지 않은 토큰입니다.");
                 }
-
+                
+            } catch (ExpiredJwtException e) {
+                log.warn("[JWT 필터] 만료된 토큰 접근: {}", e.getMessage());
+                throw e; // GlobalExceptionAdvisor에서 처리
+            } catch (MalformedJwtException e) {
+                log.warn("[JWT 필터] 잘못된 토큰 형식: {}", e.getMessage());
+                throw e; // GlobalExceptionAdvisor에서 처리
+            } catch (UnsupportedJwtException e) {
+                log.warn("[JWT 필터] 지원되지 않는 토큰: {}", e.getMessage());
+                throw e; // GlobalExceptionAdvisor에서 처리
+            } catch (SecurityException e) {
+                log.warn("[JWT 필터] 토큰 서명 검증 실패: {}", e.getMessage());
+                throw e; // GlobalExceptionAdvisor에서 처리
+            } catch (JwtException e) {
+                log.warn("[JWT 필터] JWT 처리 오류: {}", e.getMessage());
+                throw e; // GlobalExceptionAdvisor에서 처리
+            } catch (ServiceException e) {
+                throw e; // 이미 처리된 서비스 예외는 그대로 전달
+            } catch (Exception e) {
+                log.error("[JWT 필터] 예상치 못한 오류: {}", e.getMessage(), e);
+                throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.value() + "", "토큰 처리 중 오류가 발생했습니다.");
             }
+        }
 
         filterChain.doFilter(request, response);
     }

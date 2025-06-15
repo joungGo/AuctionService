@@ -24,7 +24,7 @@ public class WinnerService {
 
         // 낙찰자가 존재하지 않을 경우 예외 처리
         if(winners.isEmpty()){
-            throw new ServiceException("404", "낙찰자가 존재하지 않습니다.");
+            throw new ServiceException("404", "낙찰 내역이 없습니다. 경매에 참여하여 낙찰받아보세요!");
         }
 
         // 낙찰자 목록을 WinnerCheckResponse 로 변환

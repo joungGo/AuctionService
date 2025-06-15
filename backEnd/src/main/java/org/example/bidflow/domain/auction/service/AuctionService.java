@@ -36,7 +36,7 @@ public class AuctionService {
         // 경매 목록 조회 <AuctionRepository에서 조회>
         List<Auction> auctions = auctionRepository.findAllAuctions();
         if (auctions.isEmpty()) { // 리스트가 비어있을경우 예외처리
-            throw new ServiceException("404", "경매 목록 조회 실패");
+            throw new ServiceException("404", "등록된 경매가 없습니다. 새로운 경매가 등록될 때까지 기다려주세요.");
         }
 
         // Auction 엔티티를 AuctionCheckResponse DTO로 변환

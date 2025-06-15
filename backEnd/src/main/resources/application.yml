@@ -1,12 +1,20 @@
 server:
   port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
 
 spring:
+  config:
+    import: "classpath:application-secret.yml"
+    
   data:
     redis:
-      host: localhost
-      port: 6383
-      password: "pk2258"
+      host: ${secrets.redis.prod.host}
+      port: ${secrets.redis.prod.port}
+      password: ${secrets.redis.prod.password}
 
   profiles:
     active: dev
@@ -16,9 +24,9 @@ spring:
       fail-on-empty-beans: false
 
   datasource:
-    url: jdbc:mysql://localhost:3307/awsTestDb?useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: pk2258
+    url: jdbc:mysql://${secrets.database.prod.host}:${secrets.database.prod.port}/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+    username: ${secrets.database.prod.username}
+    password: ${secrets.database.prod.password}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       auto-commit: false
@@ -26,42 +34,74 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     show-sql: false
-    database-platform: org.hibernate.dialect.MySQL8Dialect
-
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-      settings:
-        web-allow-others: true
+    database-platform: org.hibernate.dialect.MySQL8Dialecta
 
   mail:
-    host: smtp.gmail.com # Gmail SMTP 서버 호스트
-    port: 465 # Gmail SMTP 포트 (SSL을 사용할 경우 465)   username: bid.system.info@gmail.com # 이메일 발송에 사용할 Gmail 주소
-    password: tskqfpdczojlwfbh # 구글 앱 비밀번호 (2단계 인증 시 필요)
-    protocol: smtps # 이메일 전송에 사용할 프로토콜 (smtps는 SSL 보안 사용)
-
+    host: smtp.gmail.com
+    port: 587
+    username: ${secrets.mail.username}
+    password: ${secrets.mail.password}
     properties:
       mail:
         smtp:
-          auth: true # SMTP 서버 인증 사용 여부 (true로 설정)
-          timeout: 20000 # SMTP 서버와의 통신 시 대기 시간 (20초, 밀리초 단위)
-          connectiontimeout: 20000 # SMTP 서버와의 연결 시도 시간 (20초, 밀리초 단위)
-          writetimeout: 20000 # SMTP 서버로 데이터 전송 시 대기 시간 (20초, 밀리초 단위)
+          auth: true
           starttls:
             enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+      auth-code-expiration-millis: 180000  # 30 * 60 * 1000 == 3분
 
 logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
   level:
+    root: INFO
+    # Hibernate SQL 로깅
     org.hibernate.SQL: DEBUG
     org.hibernate.orm.jdbc.bind: TRACE
     org.hibernate.orm.jdbc.extract: TRACE
     org.springframework.transaction.interceptor: TRACE
-  slack:
-    webhook-uri: https://hooks.slack.com/services/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
-  config: classpath:logback-spring.xml
+    
+    # 프로젝트 로깅 설정 (개발 시 디버깅용)
+    org.example.bidflow: DEBUG
+    org.example.bidflow.global.exception: INFO
+    org.example.bidflow.domain.user.service: INFO
+    org.example.bidflow.domain.bid.service: INFO
+    org.example.bidflow.domain.auction.service: DEBUG
+    org.example.bidflow.global.app: INFO
+    
+    # Spring Security 디버깅
+    org.springframework.security: DEBUG
+    org.springframework.web.filter: DEBUG
+    
+    # Redis 관련 로깅
+    org.springframework.data.redis: DEBUG
+    
+    # 웹소켓 로깅
+    org.springframework.web.socket: DEBUG
+    
+    # 외부 라이브러리 로깅 최소화
+    com.zaxxer.hikari: WARN
+    org.apache.http: WARN
+    org.springframework.web.servlet.PageNotFound: WARN
+  
+  # 로그 파일 설정 (운영 환경에서 유용)
+  file:
+    name: logs/bidflow-application.log
+    max-size: 100MB
+    max-history: 30
+    total-size-cap: 1GB
 
 springdoc:
   default-produces-media-type: application/json;charset=UTF-8
+
+origin:
+    ip:
+        frontend: 
+            - http://localhost:3000
+            - http://43.203.21.172:3000

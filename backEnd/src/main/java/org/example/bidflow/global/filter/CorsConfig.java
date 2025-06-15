@@ -1,5 +1,7 @@
 package org.example.bidflow.global.filter;
 
+import lombok.RequiredArgsConstructor;
+import org.example.bidflow.global.config.OriginConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -7,12 +9,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
 @Configuration
+@RequiredArgsConstructor
 public class CorsConfig {
+    private final OriginConfig originConfig;
+
     @Bean
-    public CorsFilter corsFilter() { // Security가 기대하는 CorsFilter
+    public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-//        config.addAllowedOrigin("http://localhost:3000");
-        config.addAllowedOrigin("http://35.203.149.35:3000");  // 배포 주소 추가
+        originConfig.getFrontend().forEach(config::addAllowedOrigin);
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
         config.setAllowCredentials(true);
@@ -21,6 +25,4 @@ public class CorsConfig {
         source.registerCorsConfiguration("/**", config);
         return new CorsFilter(source);
     }
-
-
 }

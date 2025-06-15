@@ -1,6 +1,7 @@
 package org.example.bidflow.global.app;
 
 import lombok.RequiredArgsConstructor;
+import org.example.bidflow.global.config.OriginConfig;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -14,6 +15,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompHandshakeHandler stompHandshakeHandler;
+    private final OriginConfig originConfig;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
@@ -25,7 +27,7 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // 클라이언트가 연결할 엔드포인트
         registry.addEndpoint("/ws")         // -> ws://localhost:8080/ws
-                .setAllowedOrigins("http://35.203.149.35:3000") // CORS 허용 (모든 도메인 허용)
+                .setAllowedOrigins(originConfig.getFrontend().toArray(new String[0])) // CORS 허용 (모든 도메인 허용)
                 .addInterceptors(stompHandshakeHandler) // HandshakeInterceptor 추가 (JWT 검증)
                 .withSockJS();  // socket fallback 지원
     }
