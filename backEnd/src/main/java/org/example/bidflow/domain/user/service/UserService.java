@@ -98,7 +98,7 @@ public class UserService {
         User user = userRepository.findByUserUUID(userUUID)
                 .orElseThrow(() -> {
                     log.error("[사용자 검증 실패] 존재하지 않는 사용자 - userUUID: {}", userUUID);
-                    return new ServiceException("400", "사용자가 존재하지 않습니다.");
+                    return new ServiceException("404", "해당 사용자를 찾을 수 없습니다. 사용자 ID를 다시 확인해주세요.");
                 });
         
         log.debug("[사용자 검증 성공] 사용자 정보 조회 완료 - userUUID: {}, nickname: {}", userUUID, user.getNickname());
@@ -136,7 +136,7 @@ public class UserService {
         User user = userRepository.findByUserUUID(userUUID)
                 .orElseThrow(() -> {
                     log.error("[사용자 정보 수정 실패] 존재하지 않는 사용자 - userUUID: {}", userUUID);
-                    return new ServiceException("404", "사용자 정보를 찾을 수 없습니다.");
+                    return new ServiceException("404", "수정할 사용자 정보를 찾을 수 없습니다. 사용자 ID를 확인해주세요.");
                 });
 
         // ✅ null이 아닌 값만 업데이트

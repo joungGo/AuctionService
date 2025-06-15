@@ -46,13 +46,19 @@ public class RedisCommon {
             return result;
             
         } catch (Exception e) {
-            log.error("[Redis 오류] 데이터 조회 실패 - Key: {}, 클래스: {}", key, clazz.getSimpleName(), e);
+            log.error("[Redis 오류] 데이터 조회 실패 - Key: {}, 클래스: {}, 오류: {}", key, clazz.getSimpleName(), e.getMessage(), e);
+            // Redis 오류가 발생해도 애플리케이션이 중단되지 않도록 null 반환
             return null;
         }
     }
 
     public Set<String> getAllKeys() {
-        return template.keys("*");
+        try {
+            return template.keys("*");
+        } catch (Exception e) {
+            log.error("[Redis 오류] 전체 키 조회 실패: {}", e.getMessage(), e);
+            throw new RuntimeException("Redis 연결에 문제가 발생했습니다.", e);
+        }
     }
 
     /*public List<String> getAllKeys() {
@@ -61,9 +67,15 @@ public class RedisCommon {
 
     // explain: redis 에 데이터 저장하기 - 단일 데이터 저장
     public <T> void setData(String key, T value /*Duration expiredTime: 데이터 만료시간*/) {
-        String jsonValue = gson.toJson(value); // 객체를 JSON 형태의 문자열로 변환 = 직렬화
-        template.opsForValue().set(key, jsonValue);
-        template.expire(key, /*defaultExpireTime*/ timeUnit);
+        try {
+            String jsonValue = gson.toJson(value); // 객체를 JSON 형태의 문자열로 변환 = 직렬화
+            template.opsForValue().set(key, jsonValue);
+            template.expire(key, /*defaultExpireTime*/ timeUnit);
+            log.debug("[Redis 저장] 데이터 저장 성공 - Key: {}", key);
+        } catch (Exception e) {
+            log.error("[Redis 오류] 데이터 저장 실패 - Key: {}, 오류: {}", key, e.getMessage(), e);
+            throw new RuntimeException("Redis 데이터 저장에 실패했습니다.", e);
+        }
     }
 
     // explain: redis 에 여러 데이터를 한번에 저장하기 - 대량 데이터 저장
