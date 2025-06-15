@@ -64,6 +64,9 @@ jobs:
             # application.yml 파일 생성
             echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
             
+            # application-secret.yml 파일 생성
+            echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ubuntu/application-secret.yml
+            
             # Docker 컨테이너 실행
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             sudo docker stop bidflow || true
@@ -73,4 +76,5 @@ jobs:
               --name bidflow \
               --restart always \
               -v /home/ubuntu/application.yml:/app/application.yml \
+              -v /home/ubuntu/application-secret.yml:/app/application-secret.yml \
               ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
