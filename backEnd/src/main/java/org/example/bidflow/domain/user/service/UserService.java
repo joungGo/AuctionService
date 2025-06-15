@@ -66,16 +66,17 @@ public class UserService {
             log.warn("[회원가입 실패] 중복 정보 - 이메일: {}, 닉네임: {}", request.getEmail(), request.getNickname());
             throw new ServiceException(HttpStatus.CONFLICT.value() + "", "이미 사용 중인 이메일 또는 닉네임입니다.");
         }
-//
-//         // 비밀번호 암호화
-//        String encodedPassword = passwordEncoder.encode(request.getPassword());
+
+        // 비밀번호 암호화
+        String encodedPassword = passwordEncoder.encode(request.getPassword());
+        log.debug("[회원가입] 비밀번호 암호화 완료 - 이메일: {}", request.getEmail());
 
         // User 엔티티 생성
         String userUUID = System.currentTimeMillis() + "-" + UUID.randomUUID();
         User user = User.builder()
                 .userUUID(userUUID)
                 .email(request.getEmail())
-                .password(request.getPassword())
+                .password(encodedPassword)
                 .nickname(request.getNickname())
                 .role(Role.USER)
                 .build();
@@ -114,6 +115,14 @@ public class UserService {
                     log.warn("[로그인 실패] 존재하지 않는 이메일 - 이메일: {}", request.getEmail());
                     return new ServiceException(HttpStatus.UNAUTHORIZED.value() + "", "이메일 또는 비밀번호가 일치하지 않습니다.");
                 });
+
+        // 비밀번호 검증
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            log.warn("[로그인 실패] 비밀번호 불일치 - 이메일: {}", request.getEmail());
+            throw new ServiceException(HttpStatus.UNAUTHORIZED.value() + "", "이메일 또는 비밀번호가 일치하지 않습니다.");
+        }
+
+        log.debug("[로그인] 비밀번호 검증 성공 - 이메일: {}", request.getEmail());
 
         // JWT 토큰 발행 시 포함할 사용자 정보 설정
         Map<String, Object> claims = new HashMap<>();
