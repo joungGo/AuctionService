@@ -1,0 +1,104 @@
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+
+spring:
+  data:
+    redis:
+      host: 43.203.21.172
+      port: 6383
+      password: "pk2258"
+
+  profiles:
+    active: dev
+
+  jackson:
+    serialization:
+      fail-on-empty-beans: false
+
+  datasource:
+    url: jdbc:mysql://43.203.21.172:3307/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: pk2258
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      auto-commit: false
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.MySQL8Dialecta
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: jounghyeon123@gmail.com
+    password: nhip meza vikn czco # 구글 앱 비밀번호 (2단계 인증 시 필요)
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+      auth-code-expiration-millis: 180000  # 30 * 60 * 1000 == 3분
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    # Hibernate SQL 로깅
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.hibernate.orm.jdbc.extract: TRACE
+    org.springframework.transaction.interceptor: TRACE
+    
+    # 프로젝트 로깅 설정 (개발 시 디버깅용)
+    org.example.bidflow: DEBUG
+    org.example.bidflow.global.exception: INFO
+    org.example.bidflow.domain.user.service: INFO
+    org.example.bidflow.domain.bid.service: INFO
+    org.example.bidflow.domain.auction.service: DEBUG
+    org.example.bidflow.global.app: INFO
+    
+    # Spring Security 디버깅
+    org.springframework.security: DEBUG
+    org.springframework.web.filter: DEBUG
+    
+    # Redis 관련 로깅
+    org.springframework.data.redis: DEBUG
+    
+    # 웹소켓 로깅
+    org.springframework.web.socket: DEBUG
+    
+    # 외부 라이브러리 로깅 최소화
+    com.zaxxer.hikari: WARN
+    org.apache.http: WARN
+    org.springframework.web.servlet.PageNotFound: WARN
+  
+  # 로그 파일 설정 (운영 환경에서 유용)
+  file:
+    name: logs/bidflow-application.log
+    max-size: 100MB
+    max-history: 30
+    total-size-cap: 1GB
+
+springdoc:
+  default-produces-media-type: application/json;charset=UTF-8
+
+origin:
+    ip:
+        frontend: 
+            - http://localhost:3000
+            - http://43.203.21.172:3000
