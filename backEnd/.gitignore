@@ -48,5 +48,6 @@ logs/
 /logs/
 *.log
 *.log.*
+*.gz
 log/
 /log/
