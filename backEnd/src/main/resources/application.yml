@@ -7,11 +7,14 @@ server:
       enabled: true
 
 spring:
+  config:
+    import: "classpath:application-secret.yml"
+    
   data:
     redis:
-      host: 43.203.21.172
-      port: 6383
-      password: "pk2258"
+      host: ${secrets.redis.prod.host}
+      port: ${secrets.redis.prod.port}
+      password: ${secrets.redis.prod.password}
 
   profiles:
     active: dev
@@ -21,9 +24,9 @@ spring:
       fail-on-empty-beans: false
 
   datasource:
-    url: jdbc:mysql://43.203.21.172:3307/auctionService?useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: pk2258
+    url: jdbc:mysql://${secrets.database.prod.host}:${secrets.database.prod.port}/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+    username: ${secrets.database.prod.username}
+    password: ${secrets.database.prod.password}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       auto-commit: false
@@ -38,8 +41,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: jounghyeon123@gmail.com
-    password: nhip meza vikn czco # 구글 앱 비밀번호 (2단계 인증 시 필요)
+    username: ${secrets.mail.username}
+    password: ${secrets.mail.password}
     properties:
       mail:
         smtp:
