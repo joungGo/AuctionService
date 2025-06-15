@@ -32,12 +32,23 @@ public class RedisCommon {
 
     // explain: redis 에서 데이터 받아오기 - 캐시된 데이터를 객체로 조회
     public <T> T getData(String key, Class<T> clazz) {
-        String jsonValue = template.opsForValue().get(key);  // 키에 저장된 값을 문자열(JSON) 형태로 가져온다.
-        if (jsonValue == null) {
+        log.debug("[Redis 조회] 데이터 조회 시도 - Key: {}, 클래스: {}", key, clazz.getSimpleName());
+        
+        try {
+            String jsonValue = template.opsForValue().get(key);  // 키에 저장된 값을 문자열(JSON) 형태로 가져온다.
+            if (jsonValue == null) {
+                log.debug("[Redis 조회] 데이터 없음 - Key: {}", key);
+                return null;
+            }
+
+            T result = gson.fromJson(jsonValue, clazz); // 역질렬화 왜하는 거야? : JSON 형태의 문자열을 객체로 변환하기 위해
+            log.debug("[Redis 조회] 데이터 조회 성공 - Key: {}, 데이터: {}", key, result);
+            return result;
+            
+        } catch (Exception e) {
+            log.error("[Redis 오류] 데이터 조회 실패 - Key: {}, 클래스: {}", key, clazz.getSimpleName(), e);
             return null;
         }
-
-        return gson.fromJson(jsonValue, clazz); // 역질렬화 왜하는 거야? : JSON 형태의 문자열을 객체로 변환하기 위해
     }
 
     public Set<String> getAllKeys() {
@@ -144,20 +155,38 @@ public class RedisCommon {
 
     // explain: Redis Hash에 필드와 값을 추가. - 객체 속성 저장 (예: 사용자 프로필).
     public <T> void putInHash(String key, String field, T value) {
-        String jsonValue = gson.toJson(value);
-        template.opsForHash().put(key, field, jsonValue);
+        log.debug("[Redis 해시 저장] 해시 필드 저장 시도 - Key: {}, Field: {}, Value: {}", key, field, value);
+        
+        try {
+            String jsonValue = gson.toJson(value);
+            template.opsForHash().put(key, field, jsonValue);
+            log.debug("[Redis 해시 저장] 해시 필드 저장 성공 - Key: {}, Field: {}", key, field);
+            
+        } catch (Exception e) {
+            log.error("[Redis 오류] 해시 필드 저장 실패 - Key: {}, Field: {}, Value: {}", key, field, value, e);
+        }
     }
 
     // explain: Redis Hash에서 특정 필드의 값을 조회. - 특정 속성 조회.
     public <T> T getFromHash(String key, String field, Class<T> clazz) {
-        Object result = template.opsForHash().get(key, field);
+        log.debug("[Redis 해시 조회] 해시 필드 조회 시도 - Key: {}, Field: {}, 클래스: {}", key, field, clazz.getSimpleName());
+        
+        try {
+            Object result = template.opsForHash().get(key, field);
 
-        if (result != null) {
-            return gson.fromJson(result.toString(), clazz);
-//            return clazz.cast(result);
+            if (result != null) {
+                T convertedResult = gson.fromJson(result.toString(), clazz);
+                log.debug("[Redis 해시 조회] 해시 필드 조회 성공 - Key: {}, Field: {}, 결과: {}", key, field, convertedResult);
+                return convertedResult;
+            }
+
+            log.debug("[Redis 해시 조회] 해시 필드 없음 - Key: {}, Field: {}", key, field);
+            return null;
+            
+        } catch (Exception e) {
+            log.error("[Redis 오류] 해시 필드 조회 실패 - Key: {}, Field: {}, 클래스: {}", key, field, clazz.getSimpleName(), e);
+            return null;
         }
-
-        return null;
     }
 
     // explain: Redis에 복수개의 데이터를 한 번에 저장
