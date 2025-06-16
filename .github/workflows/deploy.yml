@@ -71,18 +71,26 @@ jobs:
             # application-secret.yml 파일 생성
             echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ubuntu/application-secret.yml
             
+            # 파일 권한 설정
+            sudo chmod 644 /home/ubuntu/application.yml
+            sudo chmod 644 /home/ubuntu/application-secret.yml
+            
+            # Docker 네트워크 생성
+            sudo docker network create bidflow-network || true
+            
             # Docker 컨테이너 실행
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
-            # Docker 컨테이너 실행 (개선된 버전)
             sudo docker run -d \
-            -p 8080:8080 \
-            --name bidflow \
-            -v /path/to/config:/app/config \
-            -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
-            -e SPRING_PROFILES_ACTIVE=prod \
-            -e SECRETS_REDIS_PROD_HOST=localhost \
-            -e SECRETS_REDIS_PROD_PORT=6383 \
-            -e SECRETS_REDIS_PROD_PASSWORD=pk2258 \
-            p22581/bidflow:9ee243507ec84ed0caac4d66e7f8e799efaf8643
+              -p 8080:8080 \
+              --name bidflow \
+              --network bidflow-network \
+              -v /home/ubuntu/application.yml:/app/config/application.yml \
+              -v /home/ubuntu/application-secret.yml:/app/config/application-secret.yml \
+              -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e SECRETS_REDIS_PROD_HOST=redis-server \
+              -e SECRETS_REDIS_PROD_PORT=6379 \
+              -e SECRETS_REDIS_PROD_PASSWORD=pk2258 \
+              ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
