@@ -79,8 +79,10 @@ jobs:
             sudo docker run -d \
             -p 8080:8080 \
             --name bidflow \
-            --restart always \
-            -v /home/ubuntu/application.yml:/app/config/application.yml \
-            -v /home/ubuntu/application-secret.yml:/app/config/application-secret.yml \
-            -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
-            ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
+            -v /path/to/config:/app/config \
+            -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
+            -e SPRING_PROFILES_ACTIVE=prod \
+            -e SECRETS_REDIS_PROD_HOST=localhost \
+            -e SECRETS_REDIS_PROD_PORT=6383 \
+            -e SECRETS_REDIS_PROD_PASSWORD=pk2258 \
+            p22581/bidflow:9ee243507ec84ed0caac4d66e7f8e799efaf8643
