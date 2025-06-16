@@ -79,6 +79,6 @@ jobs:
               -p 8080:8080 \
               --name bidflow \
               --restart always \
-              -v /home/ubuntu/application.yml:/app/application.yml \
-              -v /home/ubuntu/application-secret.yml:/app/application-secret.yml \
+              -v /home/ubuntu/application.yml:/app/BOOT-INF/classes/application.yml \
+              -v /home/ubuntu/application-secret.yml:/app/BOOT-INF/classes/application-secret.yml \
               ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
