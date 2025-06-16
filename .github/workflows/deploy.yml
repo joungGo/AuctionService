@@ -65,27 +65,22 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            # Docker 컨테이너 중단 및 제거
+            # application.yml 파일 생성
+            echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
+            
+            # application-secret.yml 파일 생성
+            echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ubuntu/application-secret.yml
+            
+            # Docker 컨테이너 실행
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
-            
-            # 최신 이미지 pull
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
-            
-            # Docker 컨테이너 실행 (환경변수 방식)
+            # Docker 컨테이너 실행 (개선된 버전)
             sudo docker run -d \
-              -p 8080:8080 \
-              --name bidflow \
-              --restart always \
-              -v /home/ubuntu/application.yml:/app/config/application.yml \
-              -v /home/ubuntu/application-secret.yml:/app/config/application-secret.yml \
-              -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
-              -e SPRING_DATA_REDIS_HOST=43.203.21.172 \
-              -e SPRING_DATA_REDIS_PORT=6383 \
-              -e SPRING_DATA_REDIS_PASSWORD=pk2258 \
-              -e SPRING_DATASOURCE_URL="jdbc:mysql://43.203.21.172:3307/auctionService?useSSL=false&allowPublicKeyRetrieval=true" \
-              -e SPRING_DATASOURCE_USERNAME=root \
-              -e SPRING_DATASOURCE_PASSWORD=pk2258 \
-              -e SPRING_MAIL_USERNAME=jounghyeon123@gmail.com \
-              -e SPRING_MAIL_PASSWORD="nhip meza vikn czco" \
-              ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
+            -p 8080:8080 \
+            --name bidflow \
+            --restart always \
+            -v /home/ubuntu/application.yml:/app/config/application.yml \
+            -v /home/ubuntu/application-secret.yml:/app/config/application-secret.yml \
+            -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
+            ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
