@@ -7,23 +7,26 @@ server:
       enabled: true
 
 spring:
+  config:
+    import: "optional:file:/app/config/application-secret.yml"
+
   data:
     redis:
-      host: ${SPRING_DATA_REDIS_HOST:localhost}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
-      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      host: ${secrets.redis.prod.host}
+      port: ${secrets.redis.prod.port}
+      password: ${secrets.redis.prod.password}
 
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+    active: dev
 
   jackson:
     serialization:
       fail-on-empty-beans: false
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/auctionService?useSSL=false&allowPublicKeyRetrieval=true}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:password}
+    url: jdbc:mysql://${secrets.database.prod.host}:${secrets.database.prod.port}/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+    username: ${secrets.database.prod.username}
+    password: ${secrets.database.prod.password}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       auto-commit: false
@@ -38,8 +41,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${SPRING_MAIL_USERNAME:}
-    password: ${SPRING_MAIL_PASSWORD:}
+    username: ${secrets.mail.username}
+    password: ${secrets.mail.password}
     properties:
       mail:
         smtp:
