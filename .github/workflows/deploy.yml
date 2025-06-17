@@ -17,13 +17,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
       
-    - name: List files for debugging
-      run: |
-        pwd
-        ls -la
-        echo "--- Checking if backEnd directory exists ---"
-        ls -la backEnd/ || echo "backEnd directory not found"
-        
     - name: Set up JDK 21
       uses: actions/setup-java@v3
       with:
@@ -46,186 +39,162 @@ jobs:
     - name: Build Docker image
       run: |
         cd backEnd
-        docker build -t bidflow-app .
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/bidflow:latest .
       
-    - name: Save Docker image
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Push to Docker Hub
       run: |
         cd backEnd
-        docker save bidflow-app > bidflow-app.tar
-        gzip bidflow-app.tar
-        echo "Files to be transferred:"
-        ls -la docker-compose.yml bidflow-app.tar.gz
-        
-    - name: Test SSH connection
-      uses: appleboy/ssh-action@v0.1.5
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        port: 22
-        script: |
-          echo "SSH connection successful!"
-          whoami
-          pwd
-          echo "Home directory: $HOME"
-          ls -la $HOME
-          mkdir -p $HOME/bidflow
-          ls -la $HOME/bidflow/
-        
-    - name: Copy files to EC2
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        port: 22
-        source: "backEnd/docker-compose.yml,backEnd/bidflow-app.tar.gz"
-        target: "~/bidflow"
-        debug: true
-        overwrite: true
+        docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
         
     - name: Deploy on EC2
       uses: appleboy/ssh-action@v0.1.5
       env:
         MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
         REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
-        envs: MYSQL_PASSWORD,REDIS_PASSWORD
-        command_timeout: 15m
+        envs: MYSQL_PASSWORD,REDIS_PASSWORD,DOCKER_USERNAME
+        command_timeout: 10m
         script: |
-          cd $HOME/bidflow
+          cd $HOME
           
-          # Move files from backEnd subdirectory to current directory
-          mv backEnd/docker-compose.yml . || echo "docker-compose.yml already exists"
-          mv backEnd/bidflow-app.tar.gz . || echo "bidflow-app.tar.gz already exists"
+          # Create bidflow directory if not exists
+          mkdir -p bidflow
+          cd bidflow
           
-          # Load Docker image
-          docker load < bidflow-app.tar.gz
-          
-          # Set environment variables for Docker Compose (now passed via envs)
-          # Export variables explicitly for Docker Compose
+          # Set environment variables
           export MYSQL_PASSWORD="$MYSQL_PASSWORD"
           export REDIS_PASSWORD="$REDIS_PASSWORD"
           
           echo "Environment variables set:"
           echo "MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
           echo "REDIS_PASSWORD: $([ -n "$REDIS_PASSWORD" ] && echo "SET" || echo "NOT SET")"
-          echo "Exported MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
-          echo "Exported REDIS_PASSWORD: $([ -n "$REDIS_PASSWORD" ] && echo "SET" || echo "NOT SET")"
           
-          # Try Docker Compose V2 first, then V1, then install
-          if command -v docker &> /dev/null && docker compose version &> /dev/null; then
-            echo "Using Docker Compose V2"
-            COMPOSE_CMD="docker compose"
-          elif command -v docker-compose &> /dev/null; then
-            echo "Using Docker Compose V1"
-            COMPOSE_CMD="docker-compose"
-          else
-            echo "Installing Docker Compose V1..."
-            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-            COMPOSE_CMD="docker-compose"
-          fi
+          # Create docker-compose.yml
+          cat > docker-compose.yml << 'EOF'
+          version: '3.8'
           
-          # Clean up old containers and networks
+          services:
+            # MySQL Database
+            mysql:
+              image: mysql:8.0
+              container_name: mysql-server
+              restart: unless-stopped
+              environment:
+                MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+                MYSQL_DATABASE: auctionService
+                MYSQL_ROOT_HOST: '%'
+              ports:
+                - "3307:3306"
+              volumes:
+                - mysql_data:/var/lib/mysql
+              command: >
+                --bind-address=0.0.0.0
+                --default-authentication-plugin=mysql_native_password
+                --character-set-server=utf8mb4
+                --collation-server=utf8mb4_unicode_ci
+              networks:
+                - bidflow-network
+              healthcheck:
+                test: ["CMD", "sh", "-c", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+                timeout: 20s
+                retries: 10
+          
+            # Redis Cache
+            redis:
+              image: redis:alpine
+              container_name: redis-server
+              restart: unless-stopped
+              environment:
+                - REDIS_PASSWORD=${REDIS_PASSWORD}
+              command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--bind", "0.0.0.0"]
+              ports:
+                - "6383:6379"
+              volumes:
+                - redis_data:/data
+              networks:
+                - bidflow-network
+              healthcheck:
+                test: ["CMD", "sh", "-c", "redis-cli -a $$REDIS_PASSWORD ping || exit 1"]
+                timeout: 3s
+                retries: 5
+          
+            # Spring Boot Application
+            app:
+              image: ${DOCKER_USERNAME}/bidflow:latest
+              container_name: bidflow
+              restart: unless-stopped
+              ports:
+                - "8080:8080"
+              environment:
+                - SPRING_PROFILES_ACTIVE=prod
+                - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+                - SPRING_DATASOURCE_USERNAME=root
+                - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD}
+                - SPRING_REDIS_HOST=redis
+                - SPRING_REDIS_PORT=6379
+                - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD}
+              depends_on:
+                mysql:
+                  condition: service_healthy
+                redis:
+                  condition: service_healthy
+              networks:
+                - bidflow-network
+          
+          volumes:
+            mysql_data:
+              driver: local
+            redis_data:
+              driver: local
+          
+          networks:
+            bidflow-network:
+              driver: bridge
+          EOF
+          
+          # Clean up old containers
           echo "=== Cleaning up existing containers ==="
-          $COMPOSE_CMD down -v --remove-orphans || echo "No containers to stop"
+          docker-compose down -v --remove-orphans 2>/dev/null || echo "No containers to stop"
+          docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers"
           
-          # Force remove any conflicting containers
-          docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers to remove"
+          # Pull latest image
+          echo "=== Pulling latest image from Docker Hub ==="
+          docker pull $DOCKER_USERNAME/bidflow:latest
           
-          docker system prune -f || echo "No cleanup needed"
+          # Start services
+          echo "=== Starting all services ==="
+          docker-compose up -d
           
-          # Debug environment variables before starting containers
-          echo "=== Environment Variables Debug ==="
-          echo "MYSQL_PASSWORD length: ${#MYSQL_PASSWORD}"
-          echo "REDIS_PASSWORD length: ${#REDIS_PASSWORD}"
-          
-          # Start MySQL and Redis first
-          echo "=== Starting MySQL and Redis first ==="
-          $COMPOSE_CMD up -d mysql redis
-          
-          # Wait for MySQL to be ready
-          echo "=== Waiting for MySQL to be ready ==="
-          for i in {1..20}; do
-            if docker exec mysql-server mysqladmin ping -h localhost -u root -p"$MYSQL_PASSWORD" --silent 2>/dev/null; then
-              echo "✅ MySQL is ready! (attempt $i)"
-              break
-            else
-              echo "⏳ Waiting for MySQL... ($i/20)"
-              if [ $i -eq 20 ]; then
-                echo "❌ MySQL failed to start within 200 seconds"
-                echo "=== MySQL Logs ==="
-                $COMPOSE_CMD logs mysql
+          # Wait for health checks
+          echo "=== Waiting for services to be healthy ==="
+          for i in {1..60}; do
+            if docker-compose ps | grep -q "healthy"; then
+              echo "✅ Services are starting up... ($i/60)"
+              if [ $(docker-compose ps | grep "healthy" | wc -l) -eq 2 ]; then
+                echo "✅ All services are healthy!"
+                break
               fi
-              sleep 10
+            else
+              echo "⏳ Waiting for health checks... ($i/60)"
             fi
+            sleep 5
           done
           
-          # Wait for Redis to be ready
-          echo "=== Waiting for Redis to be ready ==="
-          for i in {1..10}; do
-            if docker exec redis-server redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG; then
-              echo "✅ Redis is ready! (attempt $i)"
-              break
-            else
-              echo "⏳ Waiting for Redis... ($i/10)"
-              if [ $i -eq 10 ]; then
-                echo "❌ Redis failed to start within 50 seconds"
-                echo "=== Redis Logs ==="
-                $COMPOSE_CMD logs redis
-              fi
-              sleep 5
-            fi
-          done
+          # Final status
+          echo "=== Final Status ==="
+          docker-compose ps
           
-          # Now start the Spring Boot application
-          echo "=== Starting Spring Boot Application ==="
-          $COMPOSE_CMD up -d app
+          echo "=== Quick Health Check ==="
+          docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null && echo "✅ App is healthy" || echo "⏳ App still starting"
           
-          # Clean up
-          rm -f bidflow-app.tar.gz
-          
-          # Wait for application startup and check health
-          echo "=== Waiting for Spring Boot Application Health ==="
-          for i in {1..30}; do
-            if docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null; then
-              echo "✅ Spring Boot Application is healthy! (attempt $i)"
-              break
-            else
-              echo "⏳ Waiting for Spring Boot health check... ($i/30)"
-              if [ $i -eq 30 ]; then
-                echo "❌ Spring Boot failed to become healthy within 300 seconds"
-                echo "=== Application Logs ==="
-                $COMPOSE_CMD logs --tail=100 app
-              fi
-              sleep 10
-            fi
-          done
-          
-          # Check final status
-          echo "=== Final Container Status ==="
-          $COMPOSE_CMD ps
-          
-          # Test network connectivity
-          echo "=== Testing Network Connectivity ==="
-          echo "Testing MySQL connection from app container:"
-          docker exec bidflow nc -zv mysql 3306 || echo "❌ Cannot connect to MySQL"
-          echo "Testing Redis connection from app container:"
-          docker exec bidflow nc -zv redis 6379 || echo "❌ Cannot connect to Redis"
-          
-          # Test application endpoints
-          echo "=== Testing Application Endpoints ==="
-          docker exec bidflow curl -f http://localhost:8080/actuator/health || echo "❌ Health endpoint failed"
-          
-          # Show final logs (condensed)
-          echo "=== Final Application Logs (last 30 lines) ==="
-          $COMPOSE_CMD logs --tail=30 app
-          
-          echo "=== Deployment Summary ==="
-          echo "MySQL Status: $(docker exec mysql-server mysqladmin -u root -p"$MYSQL_PASSWORD" status 2>/dev/null && echo "✅ Running" || echo "❌ Failed")"
-          echo "Redis Status: $(docker exec redis-server redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null && echo "✅ Running" || echo "❌ Failed")"
-          echo "App Status: $(docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null && echo "✅ Healthy" || echo "❌ Unhealthy")" 
+          echo "=== Deployment Complete ===" 
