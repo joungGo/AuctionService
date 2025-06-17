@@ -86,10 +86,14 @@ jobs:
         
     - name: Deploy on EC2
       uses: appleboy/ssh-action@v0.1.5
+      env:
+        MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+        REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
+        envs: MYSQL_PASSWORD,REDIS_PASSWORD
         script: |
           cd $HOME/bidflow
           
@@ -100,9 +104,8 @@ jobs:
           # Load Docker image
           docker load < bidflow-app.tar.gz
           
-          # Set environment variables for Docker Compose
-          export MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}"
-          export REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
+          # Set environment variables for Docker Compose (now passed via envs)
+          # MYSQL_PASSWORD and REDIS_PASSWORD are already available from GitHub Actions
           
           echo "Environment variables set:"
           echo "MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
@@ -125,6 +128,10 @@ jobs:
           # Clean up old containers and networks
           echo "=== Cleaning up existing containers ==="
           $COMPOSE_CMD down -v --remove-orphans || echo "No containers to stop"
+          
+          # Force remove any conflicting containers
+          docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers to remove"
+          
           docker system prune -f || echo "No cleanup needed"
           
           # Start MySQL and Redis first
@@ -167,7 +174,7 @@ jobs:
           
           # Now start the Spring Boot application
           echo "=== Starting Spring Boot Application ==="
-          $COMPOSE_CMD up -d bidflow-app
+          $COMPOSE_CMD up -d app
           
           # Clean up
           rm -f bidflow-app.tar.gz
@@ -183,9 +190,9 @@ jobs:
           # Test network connectivity
           echo "=== Testing Network Connectivity ==="
           echo "Testing MySQL connection from app container:"
-          docker exec bidflow-app nc -zv mysql 3306 || echo "❌ Cannot connect to MySQL"
+          docker exec bidflow nc -zv mysql 3306 || echo "❌ Cannot connect to MySQL"
           echo "Testing Redis connection from app container:"
-          docker exec bidflow-app nc -zv redis 6379 || echo "❌ Cannot connect to Redis"
+          docker exec bidflow nc -zv redis 6379 || echo "❌ Cannot connect to Redis"
           
           # Show network details
           echo "=== Network Information ==="
@@ -195,7 +202,7 @@ jobs:
           
           # Show final logs
           echo "=== Final Application Logs ==="
-          $COMPOSE_CMD logs --tail=50 bidflow-app
+          $COMPOSE_CMD logs --tail=50 app
           
           echo "=== MySQL Status ==="
           docker exec mysql-server mysqladmin -u root -p"$MYSQL_PASSWORD" status 2>/dev/null || echo "MySQL status check failed"
