@@ -48,19 +48,20 @@ jobs:
         cd backEnd
         docker build -t bidflow-app .
       
-          - name: Save Docker image
-        run: |
-          cd backEnd
-          docker save bidflow-app | gzip > bidflow-app.tar.gz
+    - name: Save Docker image
+      run: |
+        cd backEnd
+        docker save bidflow-app > bidflow-app.tar
+        gzip bidflow-app.tar
         
     - name: Copy files to EC2
       uses: appleboy/scp-action@v0.1.4
       with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "backEnd/docker-compose.yml,backEnd/bidflow-app.tar.gz"
-          target: "/home/ubuntu/bidflow"
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "backEnd/docker-compose.yml,backEnd/bidflow-app.tar.gz"
+        target: "/home/ubuntu/bidflow"
         
     - name: Deploy on EC2
       uses: appleboy/ssh-action@v0.1.5
@@ -72,8 +73,8 @@ jobs:
           cd /home/ubuntu/bidflow
           
           # Move files from backEnd subdirectory to current directory
-          mv backEnd/docker-compose.yml .
-          mv backEnd/bidflow-app.tar.gz .
+          mv backEnd/docker-compose.yml . || echo "docker-compose.yml already exists"
+          mv backEnd/bidflow-app.tar.gz . || echo "bidflow-app.tar.gz already exists"
           
           # Load Docker image
           docker load < bidflow-app.tar.gz
@@ -83,7 +84,7 @@ jobs:
           export REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
           
           # Stop and remove existing containers
-          docker-compose down
+          docker-compose down || echo "No containers to stop"
           
           # Start new containers with environment variables
           docker-compose up -d
