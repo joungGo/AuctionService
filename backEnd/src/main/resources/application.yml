@@ -12,9 +12,9 @@ spring:
 
   data:
     redis:
-      host: ${secrets.redis.prod.host}
-      port: ${secrets.redis.prod.port}
-      password: ${secrets.redis.prod.password}
+        host: localhost
+        port: 6379
+        password: ""
 
   profiles:
     active: dev
@@ -24,9 +24,9 @@ spring:
       fail-on-empty-beans: false
 
   datasource:
-    url: jdbc:mysql://${secrets.database.prod.host}:${secrets.database.prod.port}/auctionService?useSSL=false&allowPublicKeyRetrieval=true
-    username: ${secrets.database.prod.username}
-    password: ${secrets.database.prod.password}
+    url: jdbc:mysql://localhost:3306/auctionService?useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: password
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       auto-commit: false
@@ -41,8 +41,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${secrets.mail.username}
-    password: ${secrets.mail.password}
+    username: your-email@gmail.com
+    password: your-app-password
     properties:
       mail:
         smtp:
@@ -101,7 +101,7 @@ springdoc:
   default-produces-media-type: application/json;charset=UTF-8
 
 origin:
-    ip:
-        frontend: 
-            - http://localhost:3000
-            - http://43.203.21.172:3000
+  ip:
+    frontend:
+      - http://localhost:3000
+      - http://43.203.21.172:3000
