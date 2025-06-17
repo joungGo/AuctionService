@@ -94,6 +94,7 @@ jobs:
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
         envs: MYSQL_PASSWORD,REDIS_PASSWORD
+        command_timeout: 15m
         script: |
           cd $HOME/bidflow
           
@@ -188,9 +189,22 @@ jobs:
           # Clean up
           rm -f bidflow-app.tar.gz
           
-          # Wait for application startup
-          echo "=== Waiting for application startup ==="
-          sleep 30
+          # Wait for application startup and check health
+          echo "=== Waiting for Spring Boot Application Health ==="
+          for i in {1..30}; do
+            if docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null; then
+              echo "✅ Spring Boot Application is healthy! (attempt $i)"
+              break
+            else
+              echo "⏳ Waiting for Spring Boot health check... ($i/30)"
+              if [ $i -eq 30 ]; then
+                echo "❌ Spring Boot failed to become healthy within 300 seconds"
+                echo "=== Application Logs ==="
+                $COMPOSE_CMD logs --tail=100 app
+              fi
+              sleep 10
+            fi
+          done
           
           # Check final status
           echo "=== Final Container Status ==="
@@ -203,18 +217,15 @@ jobs:
           echo "Testing Redis connection from app container:"
           docker exec bidflow nc -zv redis 6379 || echo "❌ Cannot connect to Redis"
           
-          # Show network details
-          echo "=== Network Information ==="
-          docker network ls
-          echo "=== bidflow-network details ==="
-          docker network inspect bidflow-network 2>/dev/null || echo "Network not found"
+          # Test application endpoints
+          echo "=== Testing Application Endpoints ==="
+          docker exec bidflow curl -f http://localhost:8080/actuator/health || echo "❌ Health endpoint failed"
           
-          # Show final logs
-          echo "=== Final Application Logs ==="
-          $COMPOSE_CMD logs --tail=50 app
+          # Show final logs (condensed)
+          echo "=== Final Application Logs (last 30 lines) ==="
+          $COMPOSE_CMD logs --tail=30 app
           
-          echo "=== MySQL Status ==="
-          docker exec mysql-server mysqladmin -u root -p"$MYSQL_PASSWORD" status 2>/dev/null || echo "MySQL status check failed"
-          
-          echo "=== Redis Status ==="
-          docker exec redis-server redis-cli -a "$REDIS_PASSWORD" info server 2>/dev/null | head -10 || echo "Redis status check failed" 
+          echo "=== Deployment Summary ==="
+          echo "MySQL Status: $(docker exec mysql-server mysqladmin -u root -p"$MYSQL_PASSWORD" status 2>/dev/null && echo "✅ Running" || echo "❌ Failed")"
+          echo "Redis Status: $(docker exec redis-server redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null && echo "✅ Running" || echo "❌ Failed")"
+          echo "App Status: $(docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null && echo "✅ Healthy" || echo "❌ Unhealthy")" 
