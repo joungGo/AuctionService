@@ -56,6 +56,9 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          timeout: 60s
+          command_timeout: 15m
+          script_stop: true
           script: |
             # Create bidflow directory
             mkdir -p $HOME/bidflow
@@ -166,32 +169,42 @@ jobs:
             echo "=== Starting all services ==="
             sudo docker-compose up -d
             
-            # Wait for health checks
+            # Wait for health checks with shorter intervals
             echo "=== Waiting for services to be healthy ==="
-            for i in {1..60}; do
+            for i in {1..30}; do
+              echo "⏳ Health check attempt $i/30..."
               healthy_count=$(sudo docker-compose ps | grep "healthy" | wc -l)
+              total_running=$(sudo docker-compose ps | grep "Up" | wc -l)
+              
+              echo "   - Running containers: $total_running"
+              echo "   - Healthy containers: $healthy_count"
+              
               if [ "$healthy_count" -eq 2 ]; then
                 echo "✅ All services are healthy!"
                 break
-              elif [ "$healthy_count" -gt 0 ]; then
-                echo "⏳ $healthy_count/2 services healthy... ($i/60)"
-              else
-                echo "⏳ Waiting for health checks... ($i/60)"
+              elif [ "$i" -gt 15 ]; then
+                echo "📋 Checking container status..."
+                sudo docker-compose ps
+                if [ "$i" -eq 20 ]; then
+                  echo "📋 Checking logs for troubleshooting..."
+                  sudo docker-compose logs --tail=3 mysql
+                  sudo docker-compose logs --tail=3 redis
+                fi
               fi
-              sleep 10
+              sleep 20
             done
             
             # Final status
             echo "=== Final Status ==="
             sudo docker-compose ps
             
-            echo "=== Quick Health Check ==="
-            sleep 5
+            echo "=== Application Health Check ==="
+            sleep 10
             if sudo docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null; then
-              echo "✅ App is healthy"
+              echo "✅ Application is healthy and ready!"
             else
-              echo "⏳ App still starting - checking logs:"
-              sudo docker logs bidflow --tail 10
+              echo "⚠️ Application may still be starting. Checking logs:"
+              sudo docker logs bidflow --tail 15
             fi
             
             echo "=== Deployment Complete ==="
