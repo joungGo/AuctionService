@@ -104,6 +104,10 @@ jobs:
           export MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}"
           export REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
           
+          echo "Environment variables set:"
+          echo "MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
+          echo "REDIS_PASSWORD: $([ -n "$REDIS_PASSWORD" ] && echo "SET" || echo "NOT SET")"
+          
           # Try Docker Compose V2 first, then V1, then install
           if command -v docker &> /dev/null && docker compose version &> /dev/null; then
             echo "Using Docker Compose V2"
@@ -118,20 +122,83 @@ jobs:
             COMPOSE_CMD="docker-compose"
           fi
           
-          # Stop and remove existing containers
-          $COMPOSE_CMD down || echo "No containers to stop"
+          # Clean up old containers and networks
+          echo "=== Cleaning up existing containers ==="
+          $COMPOSE_CMD down -v --remove-orphans || echo "No containers to stop"
+          docker system prune -f || echo "No cleanup needed"
           
-          # Start new containers with environment variables
-          $COMPOSE_CMD up -d
+          # Start MySQL and Redis first
+          echo "=== Starting MySQL and Redis first ==="
+          $COMPOSE_CMD up -d mysql redis
+          
+          # Wait for MySQL to be ready
+          echo "=== Waiting for MySQL to be ready ==="
+          for i in {1..20}; do
+            if docker exec mysql-server mysqladmin ping -h localhost -u root -p"$MYSQL_PASSWORD" --silent 2>/dev/null; then
+              echo "✅ MySQL is ready! (attempt $i)"
+              break
+            else
+              echo "⏳ Waiting for MySQL... ($i/20)"
+              if [ $i -eq 20 ]; then
+                echo "❌ MySQL failed to start within 200 seconds"
+                echo "=== MySQL Logs ==="
+                $COMPOSE_CMD logs mysql
+              fi
+              sleep 10
+            fi
+          done
+          
+          # Wait for Redis to be ready
+          echo "=== Waiting for Redis to be ready ==="
+          for i in {1..10}; do
+            if docker exec redis-server redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG; then
+              echo "✅ Redis is ready! (attempt $i)"
+              break
+            else
+              echo "⏳ Waiting for Redis... ($i/10)"
+              if [ $i -eq 10 ]; then
+                echo "❌ Redis failed to start within 50 seconds"
+                echo "=== Redis Logs ==="
+                $COMPOSE_CMD logs redis
+              fi
+              sleep 5
+            fi
+          done
+          
+          # Now start the Spring Boot application
+          echo "=== Starting Spring Boot Application ==="
+          $COMPOSE_CMD up -d bidflow-app
           
           # Clean up
           rm -f bidflow-app.tar.gz
           
-          # Wait for services to be ready
+          # Wait for application startup
+          echo "=== Waiting for application startup ==="
           sleep 30
           
-          # Check if services are running
+          # Check final status
+          echo "=== Final Container Status ==="
           $COMPOSE_CMD ps
           
-          # Show logs for debugging
-          $COMPOSE_CMD logs --tail=50 
+          # Test network connectivity
+          echo "=== Testing Network Connectivity ==="
+          echo "Testing MySQL connection from app container:"
+          docker exec bidflow-app nc -zv mysql 3306 || echo "❌ Cannot connect to MySQL"
+          echo "Testing Redis connection from app container:"
+          docker exec bidflow-app nc -zv redis 6379 || echo "❌ Cannot connect to Redis"
+          
+          # Show network details
+          echo "=== Network Information ==="
+          docker network ls
+          echo "=== bidflow-network details ==="
+          docker network inspect bidflow-network 2>/dev/null || echo "Network not found"
+          
+          # Show final logs
+          echo "=== Final Application Logs ==="
+          $COMPOSE_CMD logs --tail=50 bidflow-app
+          
+          echo "=== MySQL Status ==="
+          docker exec mysql-server mysqladmin -u root -p"$MYSQL_PASSWORD" status 2>/dev/null || echo "MySQL status check failed"
+          
+          echo "=== Redis Status ==="
+          docker exec redis-server redis-cli -a "$REDIS_PASSWORD" info server 2>/dev/null | head -10 || echo "Redis status check failed" 
