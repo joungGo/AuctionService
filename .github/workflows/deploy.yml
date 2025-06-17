@@ -21,6 +21,8 @@ jobs:
       run: |
         pwd
         ls -la
+        echo "--- Checking if backEnd directory exists ---"
+        ls -la backEnd/ || echo "backEnd directory not found"
         
     - name: Set up JDK 21
       uses: actions/setup-java@v3
@@ -32,25 +34,33 @@ jobs:
       uses: gradle/gradle-build-action@v2
       
     - name: Grant execute permission for gradlew
-      run: chmod +x ./gradlew
+      run: |
+        cd backEnd
+        chmod +x ./gradlew
       
     - name: Build with Gradle
-      run: ./gradlew build
+      run: |
+        cd backEnd
+        ./gradlew build
       
     - name: Build Docker image
-      run: docker build -t bidflow-app .
+      run: |
+        cd backEnd
+        docker build -t bidflow-app .
       
-    - name: Save Docker image
-      run: docker save bidflow-app | gzip > bidflow-app.tar.gz
-      
-    - name: Copy files to EC2
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        source: "docker-compose.yml,bidflow-app.tar.gz"
-        target: "/home/ubuntu/bidflow"
+          - name: Save Docker image
+        run: |
+          cd backEnd
+          docker save bidflow-app | gzip > bidflow-app.tar.gz
+        
+      - name: Copy files to EC2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "backEnd/docker-compose.yml,backEnd/bidflow-app.tar.gz"
+          target: "/home/ubuntu/bidflow"
         
     - name: Deploy on EC2
       uses: appleboy/ssh-action@v0.1.5
@@ -60,6 +70,10 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
           cd /home/ubuntu/bidflow
+          
+          # Move files from backEnd subdirectory to current directory
+          mv backEnd/docker-compose.yml .
+          mv backEnd/bidflow-app.tar.gz .
           
           # Load Docker image
           docker load < bidflow-app.tar.gz
@@ -84,4 +98,4 @@ jobs:
           docker-compose ps
           
           # Show logs for debugging
-          docker-compose logs --tail=50
+          docker-compose logs --tail=50 
