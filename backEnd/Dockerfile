@@ -1,4 +1,4 @@
-FROM gradle:8.5-jdk21-alpine as builder
+FROM gradle:8.5-jdk21-alpine AS builder
 WORKDIR /build
 
 # 그래들 파일이 변경되었을 때만 새롭게 의존패키지 다운로드 받게함.
@@ -10,7 +10,7 @@ COPY . /build
 RUN gradle build -x test --parallel
 
 # APP
-FROM openjdk:21-jre-slim
+FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
 # 필요한 패키지 설치
