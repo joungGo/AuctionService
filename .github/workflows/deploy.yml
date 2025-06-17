@@ -105,11 +105,15 @@ jobs:
           docker load < bidflow-app.tar.gz
           
           # Set environment variables for Docker Compose (now passed via envs)
-          # MYSQL_PASSWORD and REDIS_PASSWORD are already available from GitHub Actions
+          # Export variables explicitly for Docker Compose
+          export MYSQL_PASSWORD="$MYSQL_PASSWORD"
+          export REDIS_PASSWORD="$REDIS_PASSWORD"
           
           echo "Environment variables set:"
           echo "MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
           echo "REDIS_PASSWORD: $([ -n "$REDIS_PASSWORD" ] && echo "SET" || echo "NOT SET")"
+          echo "Exported MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
+          echo "Exported REDIS_PASSWORD: $([ -n "$REDIS_PASSWORD" ] && echo "SET" || echo "NOT SET")"
           
           # Try Docker Compose V2 first, then V1, then install
           if command -v docker &> /dev/null && docker compose version &> /dev/null; then
@@ -133,6 +137,11 @@ jobs:
           docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers to remove"
           
           docker system prune -f || echo "No cleanup needed"
+          
+          # Debug environment variables before starting containers
+          echo "=== Environment Variables Debug ==="
+          echo "MYSQL_PASSWORD length: ${#MYSQL_PASSWORD}"
+          echo "REDIS_PASSWORD length: ${#REDIS_PASSWORD}"
           
           # Start MySQL and Redis first
           echo "=== Starting MySQL and Redis first ==="
