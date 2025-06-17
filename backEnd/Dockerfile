@@ -10,23 +10,29 @@ COPY . /build
 RUN gradle build -x test --parallel
 
 # APP
-FROM openjdk:21
+FROM openjdk:21-jre-slim
 WORKDIR /app
 
-# 빌더 이미지에서 jar 파일만 복사
-COPY --from=builder /build/build/libs/BidFlow-0.0.1-SNAPSHOT.jar .
+# 필요한 패키지 설치
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# 런타임에 외부 설정 파일을 위한 디렉토리 생성
-RUN mkdir -p /app/config
+# 빌더 이미지에서 jar 파일만 복사
+COPY --from=builder /build/build/libs/BidFlow-0.0.1-SNAPSHOT.jar app.jar
+
+# 로그 디렉토리 생성
+RUN mkdir -p /app/logs
 
 EXPOSE 8080
 
-# root 대신 nobody 권한으로 실행
-USER nobody
-ENTRYPOINT [ \
-   "java", \
-   "-jar", \
+# Health check 추가
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Spring Boot 애플리케이션 실행
+ENTRYPOINT ["java", \
    "-Djava.security.egd=file:/dev/./urandom", \
-   "-Dsun.net.inetaddr.ttl=0", \
-   "BidFlow-0.0.1-SNAPSHOT.jar" \
-]
+   "-Dspring.profiles.active=prod", \
+   "-jar", \
+   "app.jar"]
