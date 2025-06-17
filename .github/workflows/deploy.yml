@@ -67,9 +67,10 @@ jobs:
           echo "SSH connection successful!"
           whoami
           pwd
-          ls -la /home/ubuntu/
-          mkdir -p /home/ubuntu/bidflow
-          ls -la /home/ubuntu/bidflow/
+          echo "Home directory: $HOME"
+          ls -la $HOME
+          mkdir -p $HOME/bidflow
+          ls -la $HOME/bidflow/
         
     - name: Copy files to EC2
       uses: appleboy/scp-action@v0.1.4
@@ -79,7 +80,7 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
         source: "backEnd/docker-compose.yml,backEnd/bidflow-app.tar.gz"
-        target: "/home/ubuntu/bidflow"
+        target: "~/bidflow"
         debug: true
         overwrite: true
         
@@ -90,7 +91,7 @@ jobs:
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          cd /home/ubuntu/bidflow
+          cd $HOME/bidflow
           
           # Move files from backEnd subdirectory to current directory
           mv backEnd/docker-compose.yml . || echo "docker-compose.yml already exists"
