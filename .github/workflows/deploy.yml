@@ -104,11 +104,25 @@ jobs:
           export MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}"
           export REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
           
+          # Try Docker Compose V2 first, then V1, then install
+          if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+            echo "Using Docker Compose V2"
+            COMPOSE_CMD="docker compose"
+          elif command -v docker-compose &> /dev/null; then
+            echo "Using Docker Compose V1"
+            COMPOSE_CMD="docker-compose"
+          else
+            echo "Installing Docker Compose V1..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            COMPOSE_CMD="docker-compose"
+          fi
+          
           # Stop and remove existing containers
-          docker-compose down || echo "No containers to stop"
+          $COMPOSE_CMD down || echo "No containers to stop"
           
           # Start new containers with environment variables
-          docker-compose up -d
+          $COMPOSE_CMD up -d
           
           # Clean up
           rm -f bidflow-app.tar.gz
@@ -117,7 +131,7 @@ jobs:
           sleep 30
           
           # Check if services are running
-          docker-compose ps
+          $COMPOSE_CMD ps
           
           # Show logs for debugging
-          docker-compose logs --tail=50 
+          $COMPOSE_CMD logs --tail=50 
