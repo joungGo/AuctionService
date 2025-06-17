@@ -115,3 +115,5 @@ origin:
     frontend:
       - http://localhost:3000
       - http://43.203.21.172:3000
+      - http://43.203.21.172:*
+      - https://auction-service-fe.vercel.app
