@@ -10,90 +10,68 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
+          java-package: 'jdk'
+          check-latest: false
 
       - name: Cache Gradle packages
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
+          path: ~/.gradle
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          restore-keys: ${{ runner.os }}-gradle
 
-      - name: Grant execute permission for gradlew
-        run: |
-          cd backEnd
-          chmod +x ./gradlew
+      - name: Make gradlew executable
+        run: chmod +x backEnd/gradlew
 
       - name: Build with Gradle
-        run: |
-          cd backEnd
-          ./gradlew build
-
-      - name: Build Docker image
-        run: |
-          cd backEnd
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/bidflow:latest .
+        working-directory: backEnd
+        run: ./gradlew clean build
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+        run: docker login -u "${{ secrets.DOCKER_USERNAME }}" -p "${{ secrets.DOCKER_PASSWORD }}"
 
-      - name: Push to Docker Hub
+      - name: Build Docker image
+        working-directory: backEnd
         run: |
-          cd backEnd
+          docker build . -t ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
+          docker tag ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
+
+      - name: Push Docker image to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
 
-      - name: Setup deployment directory
-        uses: appleboy/ssh-action@v0.1.5
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          timeout: 30s
           script: |
+            # Create bidflow directory
             mkdir -p $HOME/bidflow
-            cd $HOME/bidflow
-            echo "Deployment directory ready"
-
-      - name: Create docker-compose configuration
-        uses: appleboy/ssh-action@v0.1.5
-        env:
-          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          envs: MYSQL_PASSWORD,REDIS_PASSWORD,DOCKER_USERNAME
-          timeout: 30s
-          script: |
             cd $HOME/bidflow
             
             # Set environment variables
-            export MYSQL_PASSWORD="$MYSQL_PASSWORD"
-            export REDIS_PASSWORD="$REDIS_PASSWORD"
+            export MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}"
+            export REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
+            export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
             
-            echo "Environment variables set:"
+            echo "Environment variables set"
             echo "MYSQL_PASSWORD: $([ -n "$MYSQL_PASSWORD" ] && echo "SET" || echo "NOT SET")"
             echo "REDIS_PASSWORD: $([ -n "$REDIS_PASSWORD" ] && echo "SET" || echo "NOT SET")"
             
             # Create docker-compose.yml
-            cat > docker-compose.yml << 'EOF'
+            cat > docker-compose.yml << EOF
             version: '3.8'
             
             services:
@@ -103,7 +81,7 @@ jobs:
                 container_name: mysql-server
                 restart: unless-stopped
                 environment:
-                  MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+                  MYSQL_ROOT_PASSWORD: $MYSQL_PASSWORD
                   MYSQL_DATABASE: auctionService
                   MYSQL_ROOT_HOST: '%'
                 ports:
@@ -118,7 +96,7 @@ jobs:
                 networks:
                   - bidflow-network
                 healthcheck:
-                  test: ["CMD", "sh", "-c", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+                  test: ["CMD", "sh", "-c", "mysqladmin ping -h localhost -u root -p\$MYSQL_ROOT_PASSWORD"]
                   timeout: 20s
                   retries: 10
             
@@ -127,9 +105,7 @@ jobs:
                 image: redis:alpine
                 container_name: redis-server
                 restart: unless-stopped
-                environment:
-                  - REDIS_PASSWORD=${REDIS_PASSWORD}
-                command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--bind", "0.0.0.0"]
+                command: ["redis-server", "--requirepass", "$REDIS_PASSWORD", "--bind", "0.0.0.0"]
                 ports:
                   - "6383:6379"
                 volumes:
@@ -137,13 +113,13 @@ jobs:
                 networks:
                   - bidflow-network
                 healthcheck:
-                  test: ["CMD", "sh", "-c", "redis-cli -a $$REDIS_PASSWORD ping || exit 1"]
+                  test: ["CMD", "sh", "-c", "redis-cli -a \$REDIS_PASSWORD ping || exit 1"]
                   timeout: 3s
                   retries: 5
             
               # Spring Boot Application
               app:
-                image: ${DOCKER_USERNAME}/bidflow:latest
+                image: $DOCKER_USERNAME/bidflow:latest
                 container_name: bidflow
                 restart: unless-stopped
                 ports:
@@ -152,10 +128,10 @@ jobs:
                   - SPRING_PROFILES_ACTIVE=prod
                   - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/auctionService?useSSL=false&allowPublicKeyRetrieval=true
                   - SPRING_DATASOURCE_USERNAME=root
-                  - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD}
+                  - SPRING_DATASOURCE_PASSWORD=$MYSQL_PASSWORD
                   - SPRING_REDIS_HOST=redis
                   - SPRING_REDIS_PORT=6379
-                  - SPRING_REDIS_PASSWORD=${REDIS_PASSWORD}
+                  - SPRING_REDIS_PASSWORD=$REDIS_PASSWORD
                 depends_on:
                   mysql:
                     condition: service_healthy
@@ -176,61 +152,46 @@ jobs:
             EOF
             
             echo "Docker Compose configuration created"
-
-      - name: Deploy application
-        uses: appleboy/ssh-action@v0.1.5
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          envs: DOCKER_USERNAME
-          timeout: 30s
-          command_timeout: 8m
-          script: |
-            cd $HOME/bidflow
             
             # Clean up old containers
             echo "=== Cleaning up existing containers ==="
-            docker-compose down -v --remove-orphans 2>/dev/null || echo "No containers to stop"
-            docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers"
+            sudo docker-compose down -v --remove-orphans 2>/dev/null || echo "No containers to stop"
+            sudo docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers"
             
             # Pull latest image
             echo "=== Pulling latest image from Docker Hub ==="
-            docker pull $DOCKER_USERNAME/bidflow:latest
+            sudo docker pull $DOCKER_USERNAME/bidflow:latest
             
             # Start services
             echo "=== Starting all services ==="
-            docker-compose up -d
+            sudo docker-compose up -d
             
-            # Wait for health checks with shorter intervals
+            # Wait for health checks
             echo "=== Waiting for services to be healthy ==="
-            for i in {1..48}; do
-              healthy_count=$(docker-compose ps | grep "healthy" | wc -l)
+            for i in {1..60}; do
+              healthy_count=$(sudo docker-compose ps | grep "healthy" | wc -l)
               if [ "$healthy_count" -eq 2 ]; then
                 echo "✅ All services are healthy!"
                 break
               elif [ "$healthy_count" -gt 0 ]; then
-                echo "⏳ $healthy_count/2 services healthy... ($i/48)"
+                echo "⏳ $healthy_count/2 services healthy... ($i/60)"
               else
-                echo "⏳ Waiting for health checks... ($i/48)"
+                echo "⏳ Waiting for health checks... ($i/60)"
               fi
               sleep 10
             done
             
             # Final status
             echo "=== Final Status ==="
-            docker-compose ps
+            sudo docker-compose ps
             
             echo "=== Quick Health Check ==="
             sleep 5
-            if docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null; then
+            if sudo docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null; then
               echo "✅ App is healthy"
             else
               echo "⏳ App still starting - checking logs:"
-              docker logs bidflow --tail 10
+              sudo docker logs bidflow --tail 10
             fi
             
-            echo "=== Deployment Complete ===" 
+            echo "=== Deployment Complete ==="
