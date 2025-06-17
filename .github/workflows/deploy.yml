@@ -2,9 +2,9 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 env:
   APPLICATION_YML: ${{ secrets.APPLICATION_YML }}
