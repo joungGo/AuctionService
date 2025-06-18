@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [ opened, synchronize, reopened, closed ]
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
   build:
@@ -36,7 +36,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle
 
-      - name: Make gradlew executable
+      - name: Make gradlew executable 
         run: chmod +x backEnd/gradlew
 
       - name: Build with Gradle
@@ -57,148 +57,27 @@ jobs:
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
 
-      - name: Debug SSH Connection Info
-        run: |
-          echo "SSH Connection Debug Info:"
-          echo "Host: ${{ secrets.EC2_HOST }}"
-          echo "User: ${{ secrets.EC2_USER }}"
-          echo "SSH Key (first 50 chars): ${EC2_SSH_KEY:0:50}..."
-        env:
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-
-      - name: Test SSH Connection with detailed options
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 120s
-          command_timeout: 60s
-          debug: true
-          script: |
-            echo "=== SSH Connection Successful ==="
-            echo "Current user: $(whoami)"
-            echo "Home directory: $HOME" 
-            echo "Current directory: $(pwd)"
-            echo "=== System Information ==="
-            cat /etc/os-release
-            uname -a
-            echo "=== Docker Status ==="
-            docker --version || echo "Docker not installed"
-            sudo systemctl is-active docker || echo "Docker service not running"
-
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.DEPLOY_SERVER }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          timeout: 300s
-          command_timeout: 300s
           script: |
-            # Docker가 설치되어 있는지 확인
-            if ! command -v docker &> /dev/null; then
-              echo "Docker is not installed. Installing Docker..."
-              # Ubuntu용 Docker 설치
-              sudo apt-get update
-              sudo apt-get install -y ca-certificates curl gnupg lsb-release
-              sudo mkdir -p /etc/apt/keyrings
-              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-              sudo apt-get update
-              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-              sudo systemctl start docker
-              sudo systemctl enable docker
-              sudo usermod -a -G docker ubuntu
-              echo "Docker installed successfully"
-            fi
-            
-            # Docker 서비스 상태 확인
-            sudo systemctl status docker --no-pager || true
-            
-            # Docker 네트워크 생성
-            echo "Creating Docker network..."
-            sudo docker network create bidflow-network || echo "Network already exists"
-            
-            # MySQL 컨테이너 확인 및 실행
-            echo "Checking MySQL container..."
-            if ! sudo docker ps -a --format "table {{.Names}}" | grep -q "mysql-container"; then
-              echo "MySQL container not found. Creating new MySQL container..."
-              sudo docker run -d \
-                --name mysql-container \
-                --network bidflow-network \
-                -p 3306:3306 \
-                -e MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }} \
-                -e MYSQL_DATABASE=auctionService \
-                -v mysql-data:/var/lib/mysql \
-                --restart unless-stopped \
-                mysql:8.0
-              echo "Waiting for MySQL to initialize..."
-              sleep 30
-            else
-              echo "MySQL container exists. Starting if not running..."
-              sudo docker start mysql-container || true
-              echo "Waiting for MySQL to be ready..."
-              sleep 10
-            fi
-            
-            # Redis 컨테이너 확인 및 실행
-            echo "Checking Redis container..."
-            if ! sudo docker ps -a --format "table {{.Names}}" | grep -q "redis-container"; then
-              echo "Redis container not found. Creating new Redis container..."
-              sudo docker run -d \
-                --name redis-container \
-                --network bidflow-network \
-                -p 6379:6379 \
-                -v redis-data:/data \
-                --restart unless-stopped \
-                redis:7-alpine redis-server --requirepass ${{ secrets.REDIS_PASSWORD }}
-              echo "Waiting for Redis to initialize..."
-              sleep 10
-            else
-              echo "Redis container exists. Starting if not running..."
-              sudo docker start redis-container || true
-              echo "Waiting for Redis to be ready..."
-              sleep 5
-            fi
-            
-            # 컨테이너들 상태 확인
-            echo "Checking container status..."
-            sudo docker ps | grep -E "(mysql-container|redis-container)"
-            
-            # application.yml 파일 생성 (Ubuntu용 경로)
+            # application.yml 파일 생성
             echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
             
-            # application-secret.yml 파일 생성 (Ubuntu용 경로)
-            echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ubuntu/application-secret.yml
-            
-            # Docker 이미지 pull
+            # Docker 컨테이너 실행
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
-            
-            # 기존 Spring Boot 컨테이너 정리
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
-            
-            # 이전 이미지 정리 (선택사항)
-            sudo docker image prune -f || true
-            
-            # Spring Boot 컨테이너 실행 (네트워크 연결)
-            echo "Starting Spring Boot application..."
+            # Docker 컨테이너 실행 (개선된 버전)
             sudo docker run -d \
-              -p 8080:8080 \
-              --name bidflow \
-              --network bidflow-network \
-              --restart unless-stopped \
-              -v /home/ubuntu:/app/config \
-              -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
-              -e SPRING_PROFILES_ACTIVE=prod \
-              --depends-on mysql-container \
-              --depends-on redis-container \
-              ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
-            
-            # 컨테이너 실행 확인
-            sleep 5
-            sudo docker ps -a
-            sudo docker logs bidflow --tail 20 || true
+            -p 8080:8080 \
+            --name bidflow \
+            --restart always \
+            -v /home/ubuntu/application.yml:/app/config/application.yml \
+            -v /home/ubuntu/application-secret.yml:/app/config/application-secret.yml \
+            -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
+            ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
