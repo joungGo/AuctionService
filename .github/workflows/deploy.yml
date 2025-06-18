@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened, synchronize, reopened, closed]
+    types: [ opened, synchronize, reopened, closed ]
 
 jobs:
   build:
@@ -36,7 +36,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle
 
-      - name: Make gradlew executable 
+      - name: Make gradlew executable
         run: chmod +x backEnd/gradlew
 
       - name: Build with Gradle
@@ -57,32 +57,55 @@ jobs:
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
 
+      - name: Test SSH Connection
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          timeout: 60s
+          debug: true
+          script: |
+            echo "SSH connection successful!"
+            whoami
+            pwd
+            docker --version
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_SERVER }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          timeout: 300s
+          command_timeout: 300s
           script: |
-            # application.yml 파일 생성
-            echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
+            # Docker가 설치되어 있는지 확인
+            if ! command -v docker &> /dev/null; then
+              echo "Docker is not installed"
+              exit 1
+            fi
             
-            # application-secret.yml 파일 생성
-            echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ubuntu/application-secret.yml
+            # application.yml 파일 생성 (Amazon Linux용 경로)
+            echo '${{ secrets.APPLICATION_YML }}' > /home/ec2-user/application.yml
             
-            # Docker 컨테이너 실행
+            # application-secret.yml 파일 생성 (Amazon Linux용 경로)
+            echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ec2-user/application-secret.yml
+            
+            # Docker 이미지 pull
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
+            
+            # 기존 컨테이너 정리
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
-            # Docker 컨테이너 실행 (개선된 버전)
+            
+            # Docker 컨테이너 실행 (Amazon Linux용 경로)
             sudo docker run -d \
-            -p 8080:8080 \
-            --name bidflow \
-            -v /path/to/config:/app/config \
-            -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
-            -e SPRING_PROFILES_ACTIVE=prod \
-            -e SECRETS_REDIS_PROD_HOST=localhost \
-            -e SECRETS_REDIS_PROD_PORT=6383 \
-            -e SECRETS_REDIS_PROD_PASSWORD=pk2258 \
-            p22581/bidflow:9ee243507ec84ed0caac4d66e7f8e799efaf8643
+              -p 8080:8080 \
+              --name bidflow \
+              -v /home/ec2-user:/app/config \
+              -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
