@@ -65,12 +65,16 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           timeout: 60s
+          command_timeout: 30s
           debug: true
           script: |
             echo "SSH connection successful!"
             whoami
             pwd
-            docker --version
+            docker --version || echo "Docker not found"
+            # 시스템 정보 확인
+            cat /etc/os-release
+            uname -a
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
@@ -84,9 +88,18 @@ jobs:
           script: |
             # Docker가 설치되어 있는지 확인
             if ! command -v docker &> /dev/null; then
-              echo "Docker is not installed"
-              exit 1
+              echo "Docker is not installed. Installing Docker..."
+              # Amazon Linux 2023용 Docker 설치
+              sudo yum update -y
+              sudo yum install docker -y
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -a -G docker ec2-user
+              echo "Docker installed successfully"
             fi
+            
+            # Docker 서비스 상태 확인
+            sudo systemctl status docker --no-pager || true
             
             # application.yml 파일 생성 (Amazon Linux용 경로)
             echo '${{ secrets.APPLICATION_YML }}' > /home/ec2-user/application.yml
@@ -101,11 +114,20 @@ jobs:
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
             
+            # 이전 이미지 정리 (선택사항)
+            sudo docker image prune -f || true
+            
             # Docker 컨테이너 실행 (Amazon Linux용 경로)
             sudo docker run -d \
               -p 8080:8080 \
               --name bidflow \
+              --restart unless-stopped \
               -v /home/ec2-user:/app/config \
               -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
               -e SPRING_PROFILES_ACTIVE=prod \
               ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
+            
+            # 컨테이너 실행 확인
+            sleep 5
+            sudo docker ps -a
+            sudo docker logs bidflow --tail 20 || true
