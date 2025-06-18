@@ -1,25 +1,33 @@
-name: Deploy to EC2
+name: Backend Deploy To AWS
 
 on:
   push:
-    branches: [ develop ]
-  workflow_dispatch:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, closed]
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up JDK 21
+      - name: JDK 21 설정
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           java-package: 'jdk'
           check-latest: false
+          server-id: 'github'
+          server-username: ${{ github.actor }}
+          server-password: ${{ secrets.GITHUB_TOKEN }}
+          overwrite-settings: true
 
       - name: Cache Gradle packages
         uses: actions/cache@v3
@@ -28,7 +36,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle
 
-      - name: Make gradlew executable
+      - name: Make gradlew executable 
         run: chmod +x backEnd/gradlew
 
       - name: Build with Gradle
@@ -49,214 +57,32 @@ jobs:
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
           docker push ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
 
-      - name: Setup and Clean Environment
+      - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.DEPLOY_SERVER }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          timeout: 30s
-          command_timeout: 5m
           script: |
-            # Create bidflow directory
-            mkdir -p $HOME/bidflow
-            cd $HOME/bidflow
+            # application.yml 파일 생성
+            echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
             
-            # Clean up old containers
-            echo "=== Cleaning up existing containers ==="
-            sudo docker-compose down -v --remove-orphans 2>/dev/null || echo "No containers to stop"
-            sudo docker rm -f mysql-server redis-server bidflow 2>/dev/null || echo "No conflicting containers"
+            # application-secret.yml 파일 생성
+            echo '${{ secrets.APPLICATION_SECRET_YML }}' > /home/ubuntu/application-secret.yml
             
-            # Pull latest image
-            echo "=== Pulling latest image from Docker Hub ==="
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
-            
-            echo "✅ Environment setup complete"
-
-      - name: Create Docker Compose Configuration
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 2m
-          script: |
-            cd $HOME/bidflow
-            
-            # Create docker-compose.yml with direct secret substitution
-            cat > docker-compose.yml << 'EOF'
-            version: '3.8'
-            
-            services:
-              # MySQL Database
-              mysql:
-                image: mysql:8.0
-                container_name: mysql-server
-                restart: unless-stopped
-                environment:
-                  MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-                  MYSQL_DATABASE: auctionService
-                  MYSQL_ROOT_HOST: '%'
-                ports:
-                  - "3307:3306"
-                volumes:
-                  - mysql_data:/var/lib/mysql
-                command: >
-                  --bind-address=0.0.0.0
-                  --default-authentication-plugin=mysql_native_password
-                  --character-set-server=utf8mb4
-                  --collation-server=utf8mb4_unicode_ci
-                networks:
-                  - bidflow-network
-                healthcheck:
-                  test: ["CMD", "sh", "-c", "mysqladmin ping -h localhost -u root -p${{ secrets.MYSQL_PASSWORD }}"]
-                  timeout: 20s
-                  retries: 10
-            
-              # Redis Cache
-              redis:
-                image: redis:alpine
-                container_name: redis-server
-                restart: unless-stopped
-                command: ["redis-server", "--requirepass", "${{ secrets.REDIS_PASSWORD }}", "--bind", "0.0.0.0"]
-                ports:
-                  - "6383:6379"
-                volumes:
-                  - redis_data:/data
-                networks:
-                  - bidflow-network
-                healthcheck:
-                  test: ["CMD", "sh", "-c", "redis-cli -a ${{ secrets.REDIS_PASSWORD }} ping || exit 1"]
-                  timeout: 3s
-                  retries: 5
-            
-              # Spring Boot Application
-              app:
-                image: ${{ secrets.DOCKER_USERNAME }}/bidflow:latest
-                container_name: bidflow
-                restart: unless-stopped
-                ports:
-                  - "8080:8080"
-                environment:
-                  - SPRING_PROFILES_ACTIVE=prod
-                  - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/auctionService?useSSL=false&allowPublicKeyRetrieval=true
-                  - SPRING_DATASOURCE_USERNAME=root
-                  - SPRING_DATASOURCE_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-                  - SPRING_REDIS_HOST=redis
-                  - SPRING_REDIS_PORT=6379
-                  - SPRING_REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
-                depends_on:
-                  mysql:
-                    condition: service_healthy
-                  redis:
-                    condition: service_healthy
-                networks:
-                  - bidflow-network
-            
-            volumes:
-              mysql_data:
-                driver: local
-              redis_data:
-                driver: local
-            
-            networks:
-              bidflow-network:
-                driver: bridge
-            EOF
-            
-            echo "✅ Docker Compose configuration created"
-
-      - name: Start Services
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 3m
-          script: |
-            cd $HOME/bidflow
-            
-            # Start services in background
-            echo "=== Starting all services ==="
-            sudo docker-compose up -d
-            
-            echo "✅ Services started in background"
-            sudo docker-compose ps
-
-      - name: Wait for Services Health
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 10m
-          script: |
-            cd $HOME/bidflow
-            
-            # Wait for health checks
-            echo "=== Waiting for services to be healthy ==="
-            for i in {1..20}; do
-              echo "⏳ Health check attempt $i/20..."
-              
-              mysql_status=$(sudo docker inspect mysql-server --format='{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
-              redis_status=$(sudo docker inspect redis-server --format='{{.State.Health.Status}}' 2>/dev/null || echo "unknown")
-              
-              echo "   - MySQL status: $mysql_status"
-              echo "   - Redis status: $redis_status"
-              
-              if [ "$mysql_status" = "healthy" ] && [ "$redis_status" = "healthy" ]; then
-                echo "✅ All services are healthy!"
-                break
-              elif [ "$i" -eq 10 ]; then
-                echo "📋 Checking logs at halfway point..."
-                sudo docker-compose logs --tail=3 mysql
-                sudo docker-compose logs --tail=3 redis
-              fi
-              sleep 30
-            done
-            
-            # Final status
-            echo "=== Final Status ==="
-            sudo docker-compose ps
-
-      - name: Verify Application
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 2m
-          script: |
-            cd $HOME/bidflow
-            
-            echo "=== Application Health Check ==="
-            sleep 15
-            
-            # Check if bidflow container is running
-            if sudo docker ps | grep bidflow | grep -q "Up"; then
-              echo "✅ BidFlow container is running"
-              
-              # Try health check
-              if sudo docker exec bidflow curl -f http://localhost:8080/actuator/health 2>/dev/null; then
-                echo "✅ Application is healthy and ready!"
-              else
-                echo "⚠️ Application health check failed. Checking logs:"
-                sudo docker logs bidflow --tail 10
-              fi
-            else
-              echo "❌ BidFlow container is not running. Checking status:"
-              sudo docker-compose ps
-              sudo docker logs bidflow --tail 15 2>/dev/null || echo "No logs available"
-            fi
-            
-            echo "=== Deployment Complete ==="
-            echo "🌐 Application should be available at: http://${{ secrets.EC2_HOST }}:8080"
+            # Docker 컨테이너 실행
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
+            sudo docker stop bidflow || true
+            sudo docker rm bidflow || true
+            # Docker 컨테이너 실행 (개선된 버전)
+            sudo docker run -d \
+            -p 8080:8080 \
+            --name bidflow \
+            -v /path/to/config:/app/config \
+            -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
+            -e SPRING_PROFILES_ACTIVE=prod \
+            -e SECRETS_REDIS_PROD_HOST=localhost \
+            -e SECRETS_REDIS_PROD_PORT=6383 \
+            -e SECRETS_REDIS_PROD_PASSWORD=pk2258 \
+            p22581/bidflow:9ee243507ec84ed0caac4d66e7f8e799efaf8643
