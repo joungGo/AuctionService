@@ -132,8 +132,6 @@ jobs:
                 -p 3306:3306 \
                 -e MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }} \
                 -e MYSQL_DATABASE=auctionService \
-                -e MYSQL_USER=${{ secrets.DB_USERNAME }} \
-                -e MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
                 -v mysql-data:/var/lib/mysql \
                 --restart unless-stopped \
                 mysql:8.0
