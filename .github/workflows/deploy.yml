@@ -36,7 +36,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle
 
-      - name: Make gradlew executable
+      - name: Make gradlew executable 
         run: chmod +x backEnd/gradlew
 
       - name: Build with Gradle
@@ -64,101 +64,20 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          command_timeout: 15m
-          timeout: 20m
           script: |
-            # 배포 디렉토리 생성
-            mkdir -p /home/ubuntu/bidflow-config
-            
             # application.yml 파일 생성
-            echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/bidflow-config/application.yml
+            echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
             
-            # 기존 컨테이너들 정리
-            sudo docker stop mysql-db redis-cache bidflow 2>/dev/null || true
-            sudo docker rm mysql-db redis-cache bidflow 2>/dev/null || true
-            
-            # Docker 네트워크 생성
-            sudo docker network create bidflow-network 2>/dev/null || true
-            
-            # 새 이미지 다운로드
+            # Docker 컨테이너 실행
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
-            
-            # 1. Redis 컨테이너 실행 (경량화 + 메모리 제한)
-            echo "🔄 Redis 컨테이너 시작 중..."
+            sudo docker stop bidflow || true
+            sudo docker rm bidflow || true
+            # Docker 컨테이너 실행 (개선된 버전)
             sudo docker run -d \
-              --name redis-cache \
-              --network bidflow-network \
-              --memory="128m" \
-              --memory-swap="128m" \
-              -p 6379:6379 \
-              --restart unless-stopped \
-              redis:7-alpine redis-server \
-              --requirepass "${{ secrets.REDIS_PASSWORD }}" \
-              --maxmemory 100mb \
-              --maxmemory-policy allkeys-lru
-            
-            # 2. MySQL 컨테이너 실행 (메모리 제한)
-            echo "🔄 MySQL 컨테이너 시작 중..."
-            sudo docker run -d \
-              --name mysql-db \
-              --network bidflow-network \
-              --memory="400m" \
-              --memory-swap="400m" \
-              -p 3306:3306 \
-              --restart unless-stopped \
-              -e MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}" \
-              -e MYSQL_DATABASE=auctionService \
-              -e MYSQL_USER="${{ secrets.MYSQL_USER }}" \
-              -e MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
-              mysql:8.0 \
-              --innodb-buffer-pool-size=128M \
-              --innodb-log-file-size=32M \
-              --innodb-flush-method=O_DIRECT \
-              --innodb-flush-log-at-trx-commit=2
-            
-            # 3. MySQL 초기화 대기
-            echo "⏳ MySQL 초기화 대기 중..."
-            for i in {1..30}; do
-              if sudo docker exec mysql-db mysqladmin ping -h localhost -u root -p${{ secrets.MYSQL_ROOT_PASSWORD }} --silent; then
-                echo "✅ MySQL 준비 완료"
-                break
-              fi
-              echo "대기 중... ($i/30)"
-              sleep 10
-            done
-            
-            # 4. bidflow 애플리케이션 실행 (메모리 제한)
-            echo "🔄 bidflow 애플리케이션 시작 중..."
-            sudo docker run -d \
-              --name bidflow \
-              --network bidflow-network \
-              --memory="400m" \
-              --memory-swap="400m" \
-              -p 8080:8080 \
-              --restart unless-stopped \
-              -v /home/ubuntu/bidflow-config/application.yml:/app/config/application.yml \
-              -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
-              -e SPRING_PROFILES_ACTIVE="prod" \
-              -e SPRING_REDIS_HOST="redis-cache" \
-              -e SPRING_REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
-              -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql-db:3306/auctionService?useSSL=false&allowPublicKeyRetrieval=true" \
-              -e SPRING_DATASOURCE_USERNAME="${{ secrets.MYSQL_USER }}" \
-              -e SPRING_DATASOURCE_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
-              -e JAVA_OPTS="-Xmx300m -Xms200m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC" \
-              ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
-            
-            # 5. 배포 상태 확인
-            echo "📊 컨테이너 상태 확인:"
-            sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-            
-            # 6. 메모리 사용량 확인
-            echo "💾 메모리 사용량:"
-            free -h
-            
-            # 7. bidflow 애플리케이션 로그 확인
-            echo "📋 bidflow 애플리케이션 로그:"
-            sleep 5
-            sudo docker logs bidflow --tail 10
-            
-            # 8. 이전 이미지 정리
-            sudo docker image prune -f
+            -p 8080:8080 \
+            --name bidflow \
+            --restart always \
+            -v /home/ubuntu/application.yml:/app/config/application.yml \
+            -v /home/ubuntu/application-secret.yml:/app/config/application-secret.yml \
+            -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
+            ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
