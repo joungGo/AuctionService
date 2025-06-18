@@ -106,6 +106,42 @@ jobs:
             # Docker 서비스 상태 확인
             sudo systemctl status docker --no-pager || true
             
+            # Docker 네트워크 생성
+            echo "Creating Docker network..."
+            sudo docker network create bidflow-network || echo "Network already exists"
+            
+            # MySQL 컨테이너 실행
+            echo "Starting MySQL container..."
+            sudo docker stop mysql-container || true
+            sudo docker rm mysql-container || true
+            sudo docker run -d \
+              --name mysql-container \
+              --network bidflow-network \
+              -p 3306:3306 \
+              -e MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }} \
+              -e MYSQL_DATABASE=auctionService \
+              -e MYSQL_USER=${{ secrets.DB_USERNAME }} \
+              -e MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -v mysql-data:/var/lib/mysql \
+              --restart unless-stopped \
+              mysql:8.0
+            
+            # Redis 컨테이너 실행
+            echo "Starting Redis container..."
+            sudo docker stop redis-container || true
+            sudo docker rm redis-container || true
+            sudo docker run -d \
+              --name redis-container \
+              --network bidflow-network \
+              -p 6379:6379 \
+              -v redis-data:/data \
+              --restart unless-stopped \
+              redis:7-alpine redis-server --requirepass ${{ secrets.REDIS_PASSWORD }}
+            
+            # 컨테이너들이 준비될 때까지 대기
+            echo "Waiting for database containers to be ready..."
+            sleep 30
+            
             # application.yml 파일 생성 (Ubuntu용 경로)
             echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
             
@@ -115,21 +151,25 @@ jobs:
             # Docker 이미지 pull
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             
-            # 기존 컨테이너 정리
+            # 기존 Spring Boot 컨테이너 정리
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
             
             # 이전 이미지 정리 (선택사항)
             sudo docker image prune -f || true
             
-            # Docker 컨테이너 실행 (Ubuntu용 경로)
+            # Spring Boot 컨테이너 실행 (네트워크 연결)
+            echo "Starting Spring Boot application..."
             sudo docker run -d \
               -p 8080:8080 \
               --name bidflow \
+              --network bidflow-network \
               --restart unless-stopped \
               -v /home/ubuntu:/app/config \
               -e SPRING_CONFIG_LOCATION="file:/app/config/application.yml,file:/app/config/application-secret.yml" \
               -e SPRING_PROFILES_ACTIVE=prod \
+              --depends-on mysql-container \
+              --depends-on redis-container \
               ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             
             # 컨테이너 실행 확인
