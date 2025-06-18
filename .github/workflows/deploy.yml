@@ -65,41 +65,58 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            # 디렉토리 생성
-            mkdir -p /home/ubuntu/config
+            # 프로젝트 디렉토리로 이동
+            cd /home/ubuntu/bidflow-deploy || mkdir -p /home/ubuntu/bidflow-deploy && cd /home/ubuntu/bidflow-deploy
             
-            # application.yml 파일 생성
-            echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/config/application.yml
+            # Docker Compose 파일 생성/업데이트
+            cat > docker-compose.yml << 'EOF'
+            ${{ secrets.DOCKER_COMPOSE_YML }}
+            EOF
             
-            # Docker 컨테이너 중지 및 제거
-            sudo docker stop bidflow || true
-            sudo docker rm bidflow || true
+            # 환경 변수 파일 생성/업데이트
+            cat > .env << 'EOF'
+            DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+            IMAGE_TAG=${{ github.sha }}
+            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+            MYSQL_USER=${{ secrets.MYSQL_USER }}
+            MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            EOF
             
-            # 이전 이미지 정리 (디스크 공간 확보)
-            sudo docker image prune -f
+            # config 디렉토리 생성 및 application.yml 파일 생성
+            mkdir -p config
+            echo '${{ secrets.APPLICATION_YML }}' > config/application.yml
+            
+            # Docker Compose 설치 확인 (없으면 설치)
+            if ! command -v docker-compose &> /dev/null; then
+              echo "Docker Compose 설치 중..."
+              sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+            fi
             
             # 새 이미지 다운로드
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             
-            # Docker 컨테이너 실행
-            sudo docker run -d \
-              -p 8080:8080 \
-              --name bidflow \
-              --restart always \
-              -v /home/ubuntu/config/application.yml:/app/config/application.yml \
-              -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \
-              -e SPRING_PROFILES_ACTIVE="prod" \
-              ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
-            
-            # 컨테이너 시작 대기
-            sleep 10
+            # Docker Compose로 서비스 배포
+            sudo docker-compose down || true
+            sudo docker-compose up -d
             
             # 배포 상태 확인
-            if sudo docker ps | grep -q bidflow; then
-              echo "✅ 배포 성공: bidflow 컨테이너가 실행 중입니다."
-              sudo docker logs bidflow --tail 10
+            echo "⏳ 서비스 시작 대기 중..."
+            sleep 30
+            
+            # 서비스 상태 확인
+            if sudo docker-compose ps | grep -q "Up"; then
+              echo "✅ 배포 성공!"
+              sudo docker-compose ps
+              echo "📋 bidflow 서비스 로그:"
+              sudo docker-compose logs bidflow --tail 10
             else
-              echo "❌ 배포 실패: bidflow 컨테이너가 실행되지 않았습니다."
-              sudo docker logs bidflow --tail 20
+              echo "❌ 배포 실패!"
+              sudo docker-compose ps
+              sudo docker-compose logs
               exit 1
             fi
+            
+            # 이전 이미지 정리
+            sudo docker image prune -f
