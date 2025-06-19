@@ -5,6 +5,14 @@ server:
       charset: UTF-8
       force: true
       enabled: true
+  # ALB(Application Load Balancer) 환경을 위한 설정
+  tomcat:
+    remoteip:
+      remote-ip-header: x-forwarded-for
+      protocol-header: x-forwarded-proto
+      protocol-header-https-value: https
+  # HTTP → HTTPS 리다이렉트 설정 (선택사항)
+  forward-headers-strategy: native
 
 spring:
   data:
@@ -116,5 +124,9 @@ origin:
       - http://localhost:3000
       - http://43.203.21.172:3000
       - http://43.203.21.172:*
+      - http://43.201.193.75:8080
+      - http://43.201.193.75:*
+      - https://auctionservice.site
+      - https://www.auctionservice.site
       - https://*.vercel.app
       - https://localhost:3000
