@@ -1,13 +1,21 @@
 name: Backend Deploy To AWS
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      reason:
+        description: 'Reason for deployment'
+        required: false
+        type: string
+        default: 'Manual deployment'
 
 jobs:
   build:
@@ -16,6 +24,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          ref: main  # Always deploy from main branch
+
+      - name: Display deployment info
+        run: |
+          echo "🚀 Deploying to: ${{ github.event.inputs.environment }}"
+          echo "📝 Reason: ${{ github.event.inputs.reason }}"
+          echo "🌿 Branch: main"
+          echo "👤 Triggered by: ${{ github.actor }}"
 
       - name: JDK 21 설정
         uses: actions/setup-java@v4
