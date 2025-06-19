@@ -3,14 +3,6 @@ name: Backend Deploy To AWS
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
       reason:
         description: 'Reason for deployment'
         required: false
@@ -29,7 +21,7 @@ jobs:
 
       - name: Display deployment info
         run: |
-          echo "🚀 Deploying to: ${{ github.event.inputs.environment }}"
+          echo "🚀 Deploying to production"
           echo "📝 Reason: ${{ github.event.inputs.reason }}"
           echo "🌿 Branch: main"
           echo "👤 Triggered by: ${{ github.actor }}"
