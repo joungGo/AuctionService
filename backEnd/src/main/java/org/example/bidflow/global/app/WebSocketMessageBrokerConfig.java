@@ -29,6 +29,9 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
         registry.addEndpoint("/ws")         // -> ws://localhost:8080/ws
                 .setAllowedOrigins(originConfig.getFrontend().toArray(new String[0])) // CORS 허용 (모든 도메인 허용)
                 .addInterceptors(stompHandshakeHandler) // HandshakeInterceptor 추가 (JWT 검증)
-                .withSockJS();  // socket fallback 지원
+                .withSockJS()  // socket fallback 지원
+                .setStreamBytesLimit(512 * 1024) // ALB를 위한 설정
+                .setHttpMessageCacheSize(1000)
+                .setDisconnectDelay(30 * 1000);
     }
 }

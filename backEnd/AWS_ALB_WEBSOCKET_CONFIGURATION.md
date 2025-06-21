@@ -22,8 +22,8 @@ server:
     # WebSocket을 위한 추가 설정
     max-http-header-size: 8192
     connection-timeout: 20000
-  # ALB health check를 위한 설정
-  use-forward-headers: true
+  # 프록시 헤더 처리 설정 (ALB 환경에서 필수)
+  forward-headers-strategy: native
 ```
 
 **설정 설명:**
@@ -36,9 +36,10 @@ server:
   - ALB와 백엔드 간의 연결 유지 시간 확보
   - WebSocket 연결 설정 시간 여유 제공
 
-- `use-forward-headers: true`: 프록시 헤더 사용 활성화
+- `forward-headers-strategy: native`: 프록시 헤더 처리 전략 설정
   - ALB가 전달하는 `X-Forwarded-For`, `X-Forwarded-Proto` 헤더 처리
   - 클라이언트의 실제 IP와 프로토콜 정보 획득
+  - Spring Boot 2.2+ 에서 권장하는 설정 방식
 
 ### 2. WebSocketMessageBrokerConfig.java 설정 강화
 

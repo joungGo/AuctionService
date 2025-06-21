@@ -11,6 +11,9 @@ server:
       remote-ip-header: x-forwarded-for
       protocol-header: x-forwarded-proto
       protocol-header-https-value: https
+    # WebSocket을 위한 추가 설정
+    max-http-header-size: 8192
+    connection-timeout: 20000
   # HTTP → HTTPS 리다이렉트 설정 (선택사항)
   forward-headers-strategy: native
 
