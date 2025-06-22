@@ -32,6 +32,8 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
                 .withSockJS()  // socket fallback 지원
                 .setStreamBytesLimit(512 * 1024) // ALB를 위한 설정
                 .setHttpMessageCacheSize(1000)
-                .setDisconnectDelay(30 * 1000);
+                .setDisconnectDelay(30 * 1000)
+                .setWebSocketEnabled(true) // WebSocket 명시적 활성화
+                .setTransportHandlers(); // 기본 transport 핸들러 사용
     }
 }
