@@ -132,4 +132,5 @@ origin:
       - https://auctionservice.site
       - https://www.auctionservice.site
       - https://*.vercel.app
+      - https://auction-service-fe.vercel.app
       - https://localhost:3000
