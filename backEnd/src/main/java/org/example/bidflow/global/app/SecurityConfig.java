@@ -38,6 +38,7 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable)) // H2 콘솔을 위한 iframe 허용
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Preflight 요청 허용
+                        .requestMatchers("/ws/**").permitAll() // WebSocket 연결 허용
                         .requestMatchers("/api/auth/signup", "/api/auth/login", "/api/auth/send-code", "/api/auth/vertify", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/auth/users/**").authenticated()
                         .requestMatchers("/api/auctions/{auctionId}", "/api/auctions").permitAll()

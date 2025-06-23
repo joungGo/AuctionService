@@ -32,6 +32,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtProvider jwtProvider;
     private final JwtBlacklistService jwtBlacklistService;
 
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        // WebSocket 연결 경로는 JWT 필터에서 제외
+        return path.startsWith("/ws");
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
