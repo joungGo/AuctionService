@@ -22,7 +22,9 @@ public class CorsConfig {
         config.addAllowedMethod("*");
         config.setAllowCredentials(true);
 
+        // WebSocket 전용 CORS 설정 - 실제 origin 목록 사용
         CorsConfiguration wsConfig = new CorsConfiguration();
+        originConfig.getFrontend().forEach(wsConfig::addAllowedOrigin);
         wsConfig.addAllowedOriginPattern("*");
         wsConfig.addAllowedHeader("*");
         wsConfig.addAllowedMethod("*");
