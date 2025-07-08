@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.user.service.JwtBlacklistService;
 import org.example.bidflow.global.exception.ServiceException;
+import org.example.bidflow.global.utils.CookieUtil;
 import org.example.bidflow.global.utils.JwtProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -31,6 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
     private final JwtBlacklistService jwtBlacklistService;
+    private final CookieUtil cookieUtil;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
@@ -105,12 +107,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    // 헤더에서 토큰 추출 (Authorization: Bearer <token>)
+    // 쿠키에서 토큰 추출 (기존 Authorization 헤더도 호환성을 위해 유지)
     private String resolveToken(HttpServletRequest request) {
+        // 1. 쿠키에서 토큰 추출 (우선순위)
+        String tokenFromCookie = cookieUtil.getJwtFromCookie(request);
+        if (tokenFromCookie != null) {
+            log.debug("[JWT 필터] 쿠키에서 토큰 추출 성공");
+            return tokenFromCookie;
+        }
+        
+        // 2. Authorization 헤더에서 토큰 추출 (하위 호환성 유지)
         String bearerToken = request.getHeader("Authorization");
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            log.debug("[JWT 필터] Authorization 헤더에서 토큰 추출 성공");
             return bearerToken.substring(7);
         }
+        
+        log.debug("[JWT 필터] 토큰을 찾을 수 없습니다.");
         return null;
     }
 }

@@ -28,20 +28,19 @@ public class BidService {
     private final UserService userService;
     private final BidRepository bidRepository;
     private final RedisCommon redisCommon;
-    private final JwtProvider jwtProvider;
 
     @Transactional
-    public BidCreateResponse createBid(Long auctionId, AuctionBidRequest request) {
+    public BidCreateResponse createBid(Long auctionId, AuctionBidRequest request, String userUUID) {
         long startTime = System.currentTimeMillis();
-        log.info("[입찰 시작] 경매 입찰 처리 시작 - 경매ID: {}, 입찰금액: {}", auctionId, request.getAmount());
+        log.info("[입찰 시작] 경매 입찰 처리 시작 - 경매ID: {}, 입찰금액: {}, userUUID: {}", 
+                auctionId, request.getAmount(), userUUID);
         
         String hashKey = "auction:" + auctionId;
         LocalDateTime now = LocalDateTime.now();
 
         try {
-            // 유저 및 경매 정보 가져오기
-            String userUUID = jwtProvider.parseUserUUID(request.getToken());    // jwt토큰 파싱해 유저UUID 가져오기
-            log.debug("[입찰 정보] 사용자 정보 추출 - userUUID: {}", userUUID);
+            // 유저 및 경매 정보 가져오기 (userUUID는 파라미터로 받음)
+            log.debug("[입찰 정보] 사용자 정보 - userUUID: {}", userUUID);
             
             User user = userService.getUserByUUID(userUUID);
             Auction auction = auctionService.getAuctionWithValidation(auctionId);
