@@ -1,13 +1,13 @@
 name: Backend Deploy To AWS
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-    types: [closed]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for deployment'
+        required: false
+        type: string
+        default: 'Manual deployment'
 
 jobs:
   build:
@@ -16,6 +16,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          ref: main  # Always deploy from main branch
+
+      - name: Display deployment info
+        run: |
+          echo "🚀 Deploying to production"
+          echo "📝 Reason: ${{ github.event.inputs.reason }}"
+          echo "🌿 Branch: main"
+          echo "👤 Triggered by: ${{ github.actor }}"
 
       - name: JDK 21 설정
         uses: actions/setup-java@v4
@@ -36,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle
 
-      - name: Make gradlew executable 
+      - name: Make gradlew executable
         run: chmod +x backEnd/gradlew
 
       - name: Build with Gradle
@@ -60,22 +69,27 @@ jobs:
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_SERVER }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
             # application.yml 파일 생성
             echo '${{ secrets.APPLICATION_YML }}' > /home/ubuntu/application.yml
             
+            # Docker 네트워크 생성 (존재하지 않는 경우만)
+            sudo docker network create auction-network || true
+            
             # Docker 컨테이너 실행
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
             sudo docker stop bidflow || true
             sudo docker rm bidflow || true
-            # Docker 컨테이너 실행 (개선된 버전)
+            
+            # Docker 컨테이너 실행 (네트워크 연결 포함)
             sudo docker run -d \
             -p 8080:8080 \
             --name bidflow \
+            --network auction-network \
             --restart always \
             -v /home/ubuntu/application.yml:/app/config/application.yml \
             -e SPRING_CONFIG_ADDITIONAL_LOCATION="file:/app/config/" \

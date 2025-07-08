@@ -134,3 +134,9 @@ origin:
       - https://*.vercel.app
       - https://auction-service-fe.vercel.app
       - https://localhost:3000
+
+# 쿠키 기반 인증 설정 (로컬 환경 기준)
+cookie:
+  secure: false     # 로컬 HTTP 환경
+  same-site: Lax    # 로컬 환경에서 적절한 설정
+  domain:           # 도메인 설정 없음
