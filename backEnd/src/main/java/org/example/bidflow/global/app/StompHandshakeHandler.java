@@ -33,9 +33,12 @@ public class StompHandshakeHandler implements HandshakeInterceptor {
         HttpServletRequest httpRequest = servletRequest.getServletRequest();
         String token = extractToken(httpRequest);
 
-        // 토큰이 있고 유효하면 연결 허용 (세션에 저장하지 않음)
+        // 토큰이 있고 유효하면 연결 허용 (세션에 저장)
         if (token != null && jwtProvider.validateToken(token)) {
             log.info("[WebSocket Handshake] 성공 - 쿠키 기반 인증 완료");
+            // 세션 속성에 JWT 토큰 저장
+            attributes.put("jwt-token", token);
+            log.debug("[WebSocket Handshake] JWT 토큰 세션에 저장 완료");
             return true;
         }
 
