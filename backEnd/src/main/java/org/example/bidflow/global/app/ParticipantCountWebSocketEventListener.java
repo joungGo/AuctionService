@@ -69,24 +69,19 @@ public class ParticipantCountWebSocketEventListener {
 
     // 헤더에서 auctionId 추출 (구현 상황에 따라 조정 필요)
     private String getAuctionIdFromHeaders(StompHeaderAccessor accessor) {
-        // 예시: 구독 경로에서 auctionId 추출
-        // accessor.getNativeHeader(): STOMP 프로토콜의 네이티브 헤더에서 특정 키의 값을 List<String> 형태로 반환
-        // get(0): 헤더 값 리스트의 첫 번째 요소를 반환 (헤더는 여러 값을 가질 수 있으므로 List 형태)
-        if (accessor.getNativeHeader("auctionId") != null) {
-            return accessor.getNativeHeader("auctionId").get(0);
+        String auctionId = accessor.getFirstNativeHeader("auctionId");
+        if (auctionId == null) {
+            log.warn("[WebSocket] auctionId 헤더 없음. accessor 전체 정보: {}", accessor);
         }
-        // 필요시 추가 파싱 로직 구현
-        return null;
+        return auctionId;
     }
 
     // 헤더에서 userUUID 추출 (구현 상황에 따라 조정 필요)
     private String getUserUUIDFromHeaders(StompHeaderAccessor accessor) {
-        // accessor.getNativeHeader(): STOMP 프로토콜의 네이티브 헤더에서 특정 키의 값을 List<String> 형태로 반환
-        // get(0): 헤더 값 리스트의 첫 번째 요소를 반환
-        if (accessor.getNativeHeader("userUUID") != null) {
-            return accessor.getNativeHeader("userUUID").get(0);
+        String userUUID = accessor.getFirstNativeHeader("userUUID");
+        if (userUUID == null) {
+            log.warn("[WebSocket] userUUID 헤더 없음. accessor 전체 정보: {}", accessor);
         }
-        // 필요시 추가 파싱 로직 구현
-        return null;
+        return userUUID;
     }
 }
