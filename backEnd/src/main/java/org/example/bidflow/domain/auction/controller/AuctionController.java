@@ -15,6 +15,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.Set;
 
 @RestController
 @RequiredArgsConstructor
@@ -33,24 +35,35 @@ public class AuctionController {
     public void joinParticipant(@Payload Map<String, String> payload) {
         String auctionId = payload.get("auctionId");
         String userUUID = payload.get("userUUID");
-        String key = "auction:" + auctionId + ":participants";
-        redisTemplate.opsForSet().add(key, userUUID);
-        broadcastParticipantCount(auctionId, key);
+        String key = "auction:" + auctionId + ":participant:" + userUUID;
+        redisTemplate.opsForValue().set(key, "true", 2, TimeUnit.MINUTES);
+        broadcastParticipantCount(auctionId);
+    }
+
+    @MessageMapping("/auction/participant/ping")
+    public void pingParticipant(@Payload Map<String, String> payload) {
+        String auctionId = payload.get("auctionId");
+        String userUUID = payload.get("userUUID");
+        String key = "auction:" + auctionId + ":participant:" + userUUID;
+        redisTemplate.opsForValue().set(key, "true", 2, TimeUnit.MINUTES);
+        broadcastParticipantCount(auctionId);
     }
 
     @MessageMapping("/auction/participant/leave")
     public void leaveParticipant(@Payload Map<String, String> payload) {
         String auctionId = payload.get("auctionId");
         String userUUID = payload.get("userUUID");
-        String key = "auction:" + auctionId + ":participants";
-        redisTemplate.opsForSet().remove(key, userUUID);
-        broadcastParticipantCount(auctionId, key);
+        String key = "auction:" + auctionId + ":participant:" + userUUID;
+        redisTemplate.delete(key);
+        broadcastParticipantCount(auctionId);
     }
 
-    private void broadcastParticipantCount(String auctionId, String key) {
-        Long count = redisTemplate.opsForSet().size(key);
+    private void broadcastParticipantCount(String auctionId) {
+        // SCAN or KEYS to count participants
+        Set<String> keys = redisTemplate.keys("auction:" + auctionId + ":participant:*");
+        int count = (keys != null) ? keys.size() : 0;
         simpMessagingTemplate.convertAndSend("/sub/auction/" + auctionId,
-                java.util.Collections.singletonMap("participantCount", count != null ? count : 0));
+                java.util.Collections.singletonMap("participantCount", count));
     }
 
     @GetMapping
