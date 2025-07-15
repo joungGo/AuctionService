@@ -120,40 +120,31 @@ public class BidController {
      */
     private String extractTokenFromSession(SimpMessageHeaderAccessor headerAccessor) {
         try {
-            log.debug("[WebSocket 토큰 추출] 토큰 추출 시작");
-            
             // 1. 세션 속성에서 토큰 추출
             Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
-            log.debug("[WebSocket 토큰 추출] 세션 속성 확인: {}", sessionAttributes);
             
             if (sessionAttributes != null) {
                 Object token = sessionAttributes.get("jwt-token");
-                log.debug("[WebSocket 토큰 추출] 세션 속성에서 jwt-token 키 조회 결과: {}", token);
                 if (token != null) {
-                    log.debug("[WebSocket] 세션 속성에서 토큰 추출 성공");
                     return token.toString();
                 }
             }
 
             // 2. 네이티브 헤더에서 토큰 추출
             Map<String, Object> nativeHeaders = (Map<String, Object>) headerAccessor.getHeader("nativeHeaders");
-            log.debug("[WebSocket 토큰 추출] 네이티브 헤더 확인: {}", nativeHeaders);
             
             if (nativeHeaders != null) {
                 Object cookieList = nativeHeaders.get("cookie");
-                log.debug("[WebSocket 토큰 추출] 네이티브 헤더의 쿠키 리스트: {}", cookieList);
                 
                 if (cookieList instanceof List) {
                     for (Object cookieObj : (List<?>) cookieList) {
                         String cookie = cookieObj.toString();
-                        log.debug("[WebSocket 토큰 추출] 쿠키 문자열 확인: {}", cookie);
                         
                         if (cookie.contains("jwt-token=")) {
                             String[] cookies = cookie.split(";");
                             for (String c : cookies) {
                                 String trimmedCookie = c.trim();
                                 if (trimmedCookie.startsWith("jwt-token=")) {
-                                    log.debug("[WebSocket] 네이티브 헤더에서 토큰 추출 성공");
                                     return trimmedCookie.substring("jwt-token=".length());
                                 }
                             }
@@ -164,18 +155,15 @@ public class BidController {
 
             // 3. STOMP 헤더에서 토큰 추출
             List<String> cookies = headerAccessor.getNativeHeader("cookie");
-            log.debug("[WebSocket 토큰 추출] STOMP 헤더의 쿠키 리스트: {}", cookies);
             
             if (cookies != null && !cookies.isEmpty()) {
                 for (String cookieHeader : cookies) {
-                    log.debug("[WebSocket 토큰 추출] STOMP 헤더 쿠키 문자열: {}", cookieHeader);
                     
                     if (cookieHeader != null && cookieHeader.contains("jwt-token=")) {
                         String[] cookieArray = cookieHeader.split(";");
                         for (String cookie : cookieArray) {
                             String trimmedCookie = cookie.trim();
                             if (trimmedCookie.startsWith("jwt-token=")) {
-                                log.debug("[WebSocket] STOMP 헤더에서 토큰 추출 성공");
                                 return trimmedCookie.substring("jwt-token=".length());
                             }
                         }

@@ -28,8 +28,6 @@ public class UserService {
     private final EmailService emailService;
 
     public  UserCheckRequest getUserCheck(String userUUID) {
-        log.debug("[사용자 조회] 사용자 확인 요청 - userUUID: {}", userUUID);
-        
         User user = getUserByUUID(userUUID); //userUUID로 조회
         
         log.info("[사용자 조회] 사용자 정보 조회 성공 - userUUID: {}, nickname: {}", userUUID, user.getNickname());
@@ -69,8 +67,6 @@ public class UserService {
 
         // 비밀번호 암호화
         String encodedPassword = passwordEncoder.encode(request.getPassword());
-        log.debug("[회원가입] 비밀번호 암호화 완료 - 이메일: {}", request.getEmail());
-
         // User 엔티티 생성
         String userUUID = System.currentTimeMillis() + "-" + UUID.randomUUID();
         User user = User.builder()
@@ -94,15 +90,12 @@ public class UserService {
 
     // UUID를 기반으로 유저 검증
     public User getUserByUUID(String userUUID) {
-        log.debug("[사용자 검증] UUID로 사용자 조회 시도 - userUUID: {}", userUUID);
-        
         User user = userRepository.findByUserUUID(userUUID)
                 .orElseThrow(() -> {
                     log.error("[사용자 검증 실패] 존재하지 않는 사용자 - userUUID: {}", userUUID);
                     return new ServiceException("404", "해당 사용자를 찾을 수 없습니다. 사용자 ID를 다시 확인해주세요.");
                 });
         
-        log.debug("[사용자 검증 성공] 사용자 정보 조회 완료 - userUUID: {}, nickname: {}", userUUID, user.getNickname());
         return user;
     }
 
@@ -150,19 +143,14 @@ public class UserService {
 
         // ✅ null이 아닌 값만 업데이트
         if (request.getNickname() != null) {
-            log.debug("[사용자 정보 수정] 닉네임 변경 - userUUID: {}, 기존: {}, 새로운: {}", 
-                    userUUID, user.getNickname(), request.getNickname());
             user.setNickname(request.getNickname());
         }
 
         if (request.getProfileImage() != null) {
-            log.debug("[사용자 정보 수정] 프로필 이미지 변경 - userUUID: {}", userUUID);
             user.setProfileImage(request.getProfileImage());
         }
 
         if (request.getEmail() != null) {
-            log.debug("[사용자 정보 수정] 이메일 변경 - userUUID: {}, 기존: {}, 새로운: {}", 
-                    userUUID, user.getEmail(), request.getEmail());
             user.setEmail(request.getEmail());
         }
 

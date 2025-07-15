@@ -40,14 +40,9 @@ public class BidService {
 
         try {
             // 유저 및 경매 정보 가져오기 (userUUID는 파라미터로 받음)
-            log.debug("[입찰 정보] 사용자 정보 - userUUID: {}", userUUID);
-            
             User user = userService.getUserByUUID(userUUID);
             Auction auction = auctionService.getAuctionWithValidation(auctionId);
             
-            log.debug("[입찰 정보] 경매 정보 - 경매ID: {}, 시작가: {}, 최소입찰단위: {}, 시작시간: {}, 종료시간: {}", 
-                    auctionId, auction.getStartPrice(), auction.getMinBid(), auction.getStartTime(), auction.getEndTime());
-
             // 경매 시간 검증
             validateAuctionTime(now, auction);
 
@@ -55,8 +50,6 @@ public class BidService {
             Integer amount = redisCommon.getFromHash(hashKey, "amount", Integer.class);
             String highestUserUUID = redisCommon.getFromHash(hashKey, "userUUID", String.class); // 현재 최고 입찰자
             int currentBidAmount = (amount != null) ? amount : auction.getStartPrice();     // DB 테스트를 위한 redis에 없으면 시작가로 설정
-
-            log.debug("[입찰 현황] 현재 최고 입찰 정보 - 최고가: {}, 최고입찰자: {}", currentBidAmount, highestUserUUID);
 
             if (userUUID.equals(highestUserUUID)) {
                 log.warn("[입찰 실패] 동일 사용자 연속 입찰 시도 - userUUID: {}, 경매ID: {}", userUUID, auctionId);
@@ -105,7 +98,6 @@ public class BidService {
                     auction.getAuctionId(), now, auction.getEndTime());
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 종료 되었습니다.");
         }
-        log.debug("[입찰 검증 성공] 경매 시간 유효성 확인 완료 - 경매ID: {}", auction.getAuctionId());
     }
 
     /** 입찰 금액 유효성 검증
@@ -114,9 +106,6 @@ public class BidService {
      * @param minBidAmount      최소 입찰 금액 단위
      */
     private void validateBidAmount(Integer newAmount, Integer currentAmount, Integer minBidAmount) {
-        log.debug("[입찰 금액 검증] 입찰 금액 유효성 검사 - 신규금액: {}, 현재금액: {}, 최소단위: {}", 
-                newAmount, currentAmount, minBidAmount);
-        
         if(newAmount <= currentAmount) {
             log.warn("[입찰 검증 실패] 현재 최고가보다 낮은 금액 입찰 - 신규금액: {}, 현재금액: {}", newAmount, currentAmount);
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "입찰 금액이 현재 최고가보다 낮습니다.");
@@ -128,7 +117,5 @@ public class BidService {
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(),
                     "입찰 금액이 최소 입찰 단위보다 작습니다. 최소 " + (currentAmount + minBidAmount) + "원 이상 입찰해야 합니다.");
         }
-        
-        log.debug("[입찰 검증 성공] 입찰 금액 유효성 확인 완료");
     }
 }

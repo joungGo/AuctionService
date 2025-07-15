@@ -7,8 +7,16 @@ import org.example.bidflow.domain.auction.service.AuctionService;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.Set;
 
 @RestController
 @RequiredArgsConstructor
@@ -16,6 +24,47 @@ import java.util.List;
 public class AuctionController {
 
     private final AuctionService auctionService;
+
+    @Autowired
+    private SimpMessagingTemplate simpMessagingTemplate;
+
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
+
+    @MessageMapping("/auction/participant/join")
+    public void joinParticipant(@Payload Map<String, String> payload) {
+        String auctionId = payload.get("auctionId");
+        String userUUID = payload.get("userUUID");
+        String key = "auction:" + auctionId + ":participant:" + userUUID;
+        redisTemplate.opsForValue().set(key, "true", 2, TimeUnit.MINUTES);
+        broadcastParticipantCount(auctionId);
+    }
+
+    @MessageMapping("/auction/participant/ping")
+    public void pingParticipant(@Payload Map<String, String> payload) {
+        String auctionId = payload.get("auctionId");
+        String userUUID = payload.get("userUUID");
+        String key = "auction:" + auctionId + ":participant:" + userUUID;
+        redisTemplate.opsForValue().set(key, "true", 2, TimeUnit.MINUTES);
+        broadcastParticipantCount(auctionId);
+    }
+
+    @MessageMapping("/auction/participant/leave")
+    public void leaveParticipant(@Payload Map<String, String> payload) {
+        String auctionId = payload.get("auctionId");
+        String userUUID = payload.get("userUUID");
+        String key = "auction:" + auctionId + ":participant:" + userUUID;
+        redisTemplate.delete(key);
+        broadcastParticipantCount(auctionId);
+    }
+
+    private void broadcastParticipantCount(String auctionId) {
+        // SCAN or KEYS to count participants
+        Set<String> keys = redisTemplate.keys("auction:" + auctionId + ":participant:*");
+        int count = (keys != null) ? keys.size() : 0;
+        simpMessagingTemplate.convertAndSend("/sub/auction/" + auctionId,
+                java.util.Collections.singletonMap("participantCount", count));
+    }
 
     @GetMapping
     public ResponseEntity<RsData<List<AuctionCheckResponse>>> getAllAuctions() {
