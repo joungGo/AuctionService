@@ -10,4 +10,6 @@ import java.util.Optional;
 
 @Repository
 public interface BidRepository extends JpaRepository<Bid, Long> {
+    // 최고 입찰자(최고가 입찰) 조회
+    Bid findTopByAuctionOrderByAmountDesc(Auction auction);
 }

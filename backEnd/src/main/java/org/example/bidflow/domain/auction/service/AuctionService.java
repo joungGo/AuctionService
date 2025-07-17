@@ -9,6 +9,7 @@ import org.example.bidflow.domain.auction.dto.*;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.example.bidflow.domain.bid.repository.BidRepository;
+import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.product.repository.ProductRepository;
 import org.example.bidflow.global.annotation.HasRole;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
 
 @Service
 @RequiredArgsConstructor
@@ -139,6 +141,27 @@ public class AuctionService {
         log.info("DetailCurrentAmount: {}", amount);
 
         return AuctionDetailResponse.from(auction, amount); // DTO 변환 후 반환
+    }
+
+    // 입찰 페이지 전용 상세 정보 반환
+    public AuctionBidDetailResponse getAuctionBidDetail(Long auctionId) {
+        Auction auction = getAuctionWithValidation(auctionId);
+        // 최고 입찰자 추출
+        Bid highestBid = bidRepository.findTopByAuctionOrderByAmountDesc(auction);
+        String highestBidderNickname = highestBid != null ? highestBid.getUser().getNickname() : null;
+        String highestBidderUUID = highestBid != null ? highestBid.getUser().getUserUUID() : null;
+        Integer currentBid = highestBid != null ? highestBid.getAmount() : auction.getStartPrice();
+        return AuctionBidDetailResponse.builder()
+            .auctionId(auction.getAuctionId())
+            .productName(auction.getProduct().getProductName())
+            .imageUrl(auction.getProduct().getImageUrl())
+            .currentBid(currentBid)
+            .status(auction.getStatus().toString())
+            .startTime(auction.getStartTime())
+            .endTime(auction.getEndTime())
+            .highestBidderNickname(highestBidderNickname)
+            .highestBidderUUID(highestBidderUUID)
+            .build();
     }
 
     // 경매 조회 및 상태 검증 메서드
