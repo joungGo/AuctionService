@@ -21,4 +21,6 @@ public class AuctionBidDetailResponse {
     private LocalDateTime endTime;
     private String highestBidderNickname;
     private String highestBidderUUID;
+    private Long categoryId;
+    private String categoryName;
 } 

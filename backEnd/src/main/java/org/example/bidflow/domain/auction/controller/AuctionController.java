@@ -68,10 +68,12 @@ public class AuctionController {
     }
 
     @GetMapping
-    public ResponseEntity<RsData<List<AuctionCheckResponse>>> getAllAuctions() {
+    public ResponseEntity<RsData<List<AuctionCheckResponse>>> getAllAuctions(
+            @RequestParam(required = false) Long categoryId) {
         // AuctionService에서 AuctionResponse 리스트를 반환
-        List<AuctionCheckResponse> response = auctionService.getAllAuctions();
-        RsData<List<AuctionCheckResponse>> rsData = new RsData<>("200", "전체 조회가 완료되었습니다.", response);
+        List<AuctionCheckResponse> response = auctionService.getAllAuctionsByCategory(categoryId);
+        String message = categoryId != null ? "카테고리별 조회가 완료되었습니다." : "전체 조회가 완료되었습니다.";
+        RsData<List<AuctionCheckResponse>> rsData = new RsData<>("200", message, response);
         return ResponseEntity.ok(rsData);
     }
 

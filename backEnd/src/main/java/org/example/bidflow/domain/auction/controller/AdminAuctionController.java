@@ -33,4 +33,11 @@ public class AdminAuctionController {
         RsData<List<AuctionAdminResponse>> rsData = new RsData<>("200", "전체 조회가 완료되었습니다.", response);
         return ResponseEntity.ok(rsData);
     }
+
+    // 기존 경매들에 기본 카테고리 할당 (한 번만 실행)
+    @PostMapping("/assign-default-category")
+    public ResponseEntity<RsData<String>> assignDefaultCategoryToExistingAuctions() {
+        auctionService.assignDefaultCategoryToExistingAuctions();
+        return ResponseEntity.ok(new RsData<>("200", "기존 경매들에 기본 카테고리 할당이 완료되었습니다.", "success"));
+    }
 }

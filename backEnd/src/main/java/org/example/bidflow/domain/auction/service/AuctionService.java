@@ -10,6 +10,9 @@ import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.example.bidflow.domain.bid.repository.BidRepository;
 import org.example.bidflow.domain.bid.entity.Bid;
+import org.example.bidflow.domain.category.entity.Category;
+import org.example.bidflow.domain.category.repository.CategoryRepository;
+import org.example.bidflow.domain.category.service.CategoryService;
 import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.product.repository.ProductRepository;
 import org.example.bidflow.domain.user.service.UserService;
@@ -32,13 +35,27 @@ public class AuctionService {
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
     private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
     private final RedisCommon redisCommon;
     private final UserService userService;
+    private final CategoryService categoryService;
 
     // 사용자-모든 경매 목록을 조회하고 AuctionResponse DTO 리스트로 변환
     public List<AuctionCheckResponse> getAllAuctions()  {
+        return getAllAuctionsByCategory(null);
+    }
+
+    // 카테고리별 경매 목록 조회
+    public List<AuctionCheckResponse> getAllAuctionsByCategory(Long categoryId)  {
         // 경매 목록 조회 <AuctionRepository에서 조회>
-        List<Auction> auctions = auctionRepository.findAllAuctions();
+        List<Auction> auctions;
+        if (categoryId != null) {
+            Category category = categoryService.getCategoryEntityById(categoryId);
+            auctions = auctionRepository.findAllAuctionsByCategory(category);
+        } else {
+            auctions = auctionRepository.findAllAuctions();
+        }
+        
         if (auctions.isEmpty()) { // 리스트가 비어있을경우 예외처리
             throw new ServiceException("404", "등록된 경매가 없습니다. 새로운 경매가 등록될 때까지 기다려주세요.");
         }
@@ -89,11 +106,18 @@ public class AuctionService {
             throw new ServiceException("404", "상품 등록 시간은 최소 2일 전부터 가능합니다.");
         }*/
 
+        // 카테고리 조회
+        Category category = null;
+        if (requestDto.getCategoryId() != null) {
+            category = categoryService.getCategoryEntityById(requestDto.getCategoryId());
+        }
+        
         // 상품 정보 저장
         Product product = Product.builder()
                 .productName(requestDto.getProductName())
                 .imageUrl(requestDto.getImageUrl())
                 .description(requestDto.getDescription())
+                .category(category)
                 .build();
         productRepository.save(product);
 
@@ -184,6 +208,8 @@ public class AuctionService {
             .endTime(auction.getEndTime())
             .highestBidderNickname(highestBidderNickname)
             .highestBidderUUID(highestBidderUUID)
+            .categoryId(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryId() : null)
+            .categoryName(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryName() : null)
             .build();
     }
 
@@ -200,6 +226,39 @@ public class AuctionService {
         }*/
 
         return auction;
+    }
+
+    // 기존 경매들에 기본 카테고리 할당 (한 번만 실행)
+    @Transactional
+    public void assignDefaultCategoryToExistingAuctions() {
+        // 기본 카테고리 조회 (첫 번째 카테고리 사용)
+        List<Category> categories = categoryRepository.findAll();
+        if (categories.isEmpty()) {
+            log.warn("카테고리가 없어서 기본 카테고리 할당을 건너뜁니다.");
+            return;
+        }
+        
+        Category defaultCategory = categories.get(0);
+        
+        // 카테고리가 없는 상품들 조회
+        List<Product> productsWithoutCategory = productRepository.findAll().stream()
+                .filter(product -> product.getCategory() == null)
+                .collect(Collectors.toList());
+        
+        for (Product product : productsWithoutCategory) {
+            Product updatedProduct = Product.builder()
+                    .productId(product.getProductId())
+                    .productName(product.getProductName())
+                    .imageUrl(product.getImageUrl())
+                    .description(product.getDescription())
+                    .category(defaultCategory)
+                    .auction(product.getAuction())
+                    .build();
+            productRepository.save(updatedProduct);
+            log.info("상품 '{}'에 기본 카테고리 '{}' 할당", product.getProductName(), defaultCategory.getCategoryName());
+        }
+        
+        log.info("총 {}개 상품에 기본 카테고리 할당 완료", productsWithoutCategory.size());
     }
 
 }
