@@ -12,6 +12,7 @@ import org.example.bidflow.domain.bid.repository.BidRepository;
 import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.product.repository.ProductRepository;
+import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.annotation.HasRole;
 import org.example.bidflow.global.app.RedisCommon;
 import org.example.bidflow.global.dto.RsData;
@@ -32,6 +33,7 @@ public class AuctionService {
     private final BidRepository bidRepository;
     private final ProductRepository productRepository;
     private final RedisCommon redisCommon;
+    private final UserService userService;
 
     // 사용자-모든 경매 목록을 조회하고 AuctionResponse DTO 리스트로 변환
     public List<AuctionCheckResponse> getAllAuctions()  {
@@ -146,16 +148,37 @@ public class AuctionService {
     // 입찰 페이지 전용 상세 정보 반환
     public AuctionBidDetailResponse getAuctionBidDetail(Long auctionId) {
         Auction auction = getAuctionWithValidation(auctionId);
-        // 최고 입찰자 추출
-        Bid highestBid = bidRepository.findTopByAuctionOrderByAmountDesc(auction);
-        String highestBidderNickname = highestBid != null ? highestBid.getUser().getNickname() : null;
-        String highestBidderUUID = highestBid != null ? highestBid.getUser().getUserUUID() : null;
-        Integer currentBid = highestBid != null ? highestBid.getAmount() : auction.getStartPrice();
+        
+        // Redis에서 실시간 최고 입찰자 정보 조회
+        String hashKey = "auction:" + auctionId;
+        String highestBidderUUID = redisCommon.getFromHash(hashKey, "userUUID", String.class);
+        Integer currentBid = redisCommon.getFromHash(hashKey, "amount", Integer.class);
+        
+        // Redis에 정보가 없으면 DB에서 조회 (폴백)
+        if (currentBid == null) {
+            Bid highestBid = bidRepository.findTopByAuctionOrderByAmountDesc(auction);
+            currentBid = highestBid != null ? highestBid.getAmount() : auction.getStartPrice();
+            highestBidderUUID = highestBid != null ? highestBid.getUser().getUserUUID() : null;
+        }
+        
+        // 최고 입찰자 닉네임 조회
+        String highestBidderNickname = null;
+        if (highestBidderUUID != null) {
+            try {
+                highestBidderNickname = userService.getUserByUUID(highestBidderUUID).getNickname();
+            } catch (Exception e) {
+                log.warn("[최고 입찰자 닉네임 조회 실패] userUUID: {}, 오류: {}", highestBidderUUID, e.getMessage());
+            }
+        }
+        
         return AuctionBidDetailResponse.builder()
             .auctionId(auction.getAuctionId())
             .productName(auction.getProduct().getProductName())
             .imageUrl(auction.getProduct().getImageUrl())
+            .description(auction.getProduct().getDescription())
+            .startPrice(auction.getStartPrice())
             .currentBid(currentBid)
+            .minBid(auction.getMinBid())
             .status(auction.getStatus().toString())
             .startTime(auction.getStartTime())
             .endTime(auction.getEndTime())

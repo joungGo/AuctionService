@@ -16,4 +16,5 @@ public class WebSocketResponse {
     private LocalDateTime localDateTime;
     private String nickname;
     private int currentBid;
+    private String userUUID;    // 최고 입찰자의 UUID
 }

@@ -12,7 +12,10 @@ public class AuctionBidDetailResponse {
     private Long auctionId;
     private String productName;
     private String imageUrl;
+    private String description;
+    private Integer startPrice;
     private Integer currentBid;
+    private Integer minBid;
     private String status;
     private LocalDateTime startTime;
     private LocalDateTime endTime;

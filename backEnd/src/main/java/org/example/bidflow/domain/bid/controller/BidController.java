@@ -79,6 +79,7 @@ public class BidController {
                     .localDateTime(LocalDateTime.now())
                     .nickname(response.getNickname())
                     .currentBid(request.getAmount())
+                    .userUUID(userUUID)  // 최고 입찰자의 UUID 포함
                     .build();
 
             simpMessagingTemplate.convertAndSend("/sub/auction/" + request.getAuctionId(), res);
@@ -106,6 +107,7 @@ public class BidController {
                     .localDateTime(LocalDateTime.now())
                     .nickname("System")
                     .currentBid(0)
+                    .userUUID(null)  // 에러 시에는 userUUID 없음
                     .build();
 
             simpMessagingTemplate.convertAndSend("/sub/auction/" + auctionId, errorRes);
