@@ -6,6 +6,7 @@ import org.example.bidflow.domain.auction.dto.AuctionBidRequest;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.service.AuctionService;
 import org.example.bidflow.domain.bid.dto.model.response.BidCreateResponse;
+import org.example.bidflow.domain.bid.dto.model.response.BidHistoryResponse;
 import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.bid.repository.BidRepository;
 import org.example.bidflow.domain.user.entity.User;
@@ -13,11 +14,15 @@ import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.app.RedisCommon;
 import org.example.bidflow.global.exception.ServiceException;
 import org.example.bidflow.global.utils.JwtProvider;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -84,6 +89,161 @@ public class BidService {
             log.error("[입찰 오류] 예상치 못한 오류 발생 - 경매ID: {}, 입찰금액: {}", 
                     auctionId, request.getAmount(), e);
             throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "입찰 처리 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 특정 경매의 입찰 내역 조회
+    @Transactional(readOnly = true)
+    public List<BidHistoryResponse> getBidHistoryByAuction(Long auctionId) {
+        log.info("[입찰 내역 조회] 경매 입찰 내역 조회 시작 - 경매ID: {}", auctionId);
+        
+        try {
+            Auction auction = auctionService.getAuctionWithValidation(auctionId);
+            List<Bid> bids = bidRepository.findByAuctionOrderByBidTimeDesc(auction);
+            
+            // Redis에서 현재 최고가 조회
+            String hashKey = "auction:" + auctionId;
+            Integer currentHighestAmount = redisCommon.getFromHash(hashKey, "amount", Integer.class);
+            
+            // DB에서 최고가 조회 (Redis 폴백)
+            if (currentHighestAmount == null) {
+                currentHighestAmount = bidRepository.findMaxAmountByAuction(auction)
+                        .orElse(auction.getStartPrice());
+            }
+            
+            final Integer finalCurrentHighestAmount = currentHighestAmount;
+            
+            List<BidHistoryResponse> responses = bids.stream()
+                    .map(bid -> {
+                        Boolean isHighestBid = bid.getAmount().equals(finalCurrentHighestAmount);
+                        return BidHistoryResponse.from(bid, isHighestBid);
+                    })
+                    .collect(Collectors.toList());
+            
+            log.info("[입찰 내역 조회] 경매 입찰 내역 조회 완료 - 경매ID: {}, 입찰 개수: {}", 
+                    auctionId, responses.size());
+            
+            return responses;
+            
+        } catch (Exception e) {
+            log.error("[입찰 내역 조회 실패] 경매ID: {}, 오류: {}", auctionId, e.getMessage(), e);
+            throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "입찰 내역 조회 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 특정 경매의 입찰 내역 페이징 조회
+    @Transactional(readOnly = true)
+    public Page<BidHistoryResponse> getBidHistoryByAuctionWithPaging(Long auctionId, Pageable pageable) {
+        log.info("[입찰 내역 페이징 조회] 경매 입찰 내역 페이징 조회 시작 - 경매ID: {}, 페이지: {}", 
+                auctionId, pageable.getPageNumber());
+        
+        try {
+            Auction auction = auctionService.getAuctionWithValidation(auctionId);
+            Page<Bid> bidPage = bidRepository.findByAuctionOrderByBidTimeDesc(auction, pageable);
+            
+            // Redis에서 현재 최고가 조회
+            String hashKey = "auction:" + auctionId;
+            Integer currentHighestAmount = redisCommon.getFromHash(hashKey, "amount", Integer.class);
+            
+            // DB에서 최고가 조회 (Redis 폴백)
+            if (currentHighestAmount == null) {
+                currentHighestAmount = bidRepository.findMaxAmountByAuction(auction)
+                        .orElse(auction.getStartPrice());
+            }
+            
+            final Integer finalCurrentHighestAmount = currentHighestAmount;
+            
+            Page<BidHistoryResponse> responsePage = bidPage.map(bid -> {
+                Boolean isHighestBid = bid.getAmount().equals(finalCurrentHighestAmount);
+                return BidHistoryResponse.from(bid, isHighestBid);
+            });
+            
+            log.info("[입찰 내역 페이징 조회] 경매 입찰 내역 페이징 조회 완료 - 경매ID: {}, 총 개수: {}, 현재 페이지: {}", 
+                    auctionId, responsePage.getTotalElements(), responsePage.getNumber());
+            
+            return responsePage;
+            
+        } catch (Exception e) {
+            log.error("[입찰 내역 페이징 조회 실패] 경매ID: {}, 오류: {}", auctionId, e.getMessage(), e);
+            throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "입찰 내역 조회 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 특정 사용자의 입찰 내역 조회
+    @Transactional(readOnly = true)
+    public List<BidHistoryResponse> getBidHistoryByUser(String userUUID) {
+        log.info("[사용자 입찰 내역 조회] 사용자 입찰 내역 조회 시작 - userUUID: {}", userUUID);
+        
+        try {
+            User user = userService.getUserByUUID(userUUID);
+            List<Bid> bids = bidRepository.findByUserOrderByBidTimeDesc(user);
+            
+            List<BidHistoryResponse> responses = bids.stream()
+                    .map(bid -> {
+                        // 각 경매별로 최고가 조회
+                        String hashKey = "auction:" + bid.getAuction().getAuctionId();
+                        Integer currentHighestAmount = redisCommon.getFromHash(hashKey, "amount", Integer.class);
+                        
+                        if (currentHighestAmount == null) {
+                            currentHighestAmount = bidRepository.findMaxAmountByAuction(bid.getAuction())
+                                    .orElse(bid.getAuction().getStartPrice());
+                        }
+                        
+                        Boolean isHighestBid = bid.getAmount().equals(currentHighestAmount);
+                        return BidHistoryResponse.from(bid, isHighestBid);
+                    })
+                    .collect(Collectors.toList());
+            
+            log.info("[사용자 입찰 내역 조회] 사용자 입찰 내역 조회 완료 - userUUID: {}, 입찰 개수: {}", 
+                    userUUID, responses.size());
+            
+            return responses;
+            
+        } catch (Exception e) {
+            log.error("[사용자 입찰 내역 조회 실패] userUUID: {}, 오류: {}", userUUID, e.getMessage(), e);
+            throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "입찰 내역 조회 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 특정 경매에서 특정 사용자의 입찰 내역 조회
+    @Transactional(readOnly = true)
+    public List<BidHistoryResponse> getBidHistoryByAuctionAndUser(Long auctionId, String userUUID) {
+        log.info("[사용자 경매별 입찰 내역 조회] 사용자 경매별 입찰 내역 조회 시작 - 경매ID: {}, userUUID: {}", 
+                auctionId, userUUID);
+        
+        try {
+            Auction auction = auctionService.getAuctionWithValidation(auctionId);
+            User user = userService.getUserByUUID(userUUID);
+            List<Bid> bids = bidRepository.findByAuctionAndUserOrderByBidTimeDesc(auction, user);
+            
+            // Redis에서 현재 최고가 조회
+            String hashKey = "auction:" + auctionId;
+            Integer currentHighestAmount = redisCommon.getFromHash(hashKey, "amount", Integer.class);
+            
+            // DB에서 최고가 조회 (Redis 폴백)
+            if (currentHighestAmount == null) {
+                currentHighestAmount = bidRepository.findMaxAmountByAuction(auction)
+                        .orElse(auction.getStartPrice());
+            }
+            
+            final Integer finalCurrentHighestAmount = currentHighestAmount;
+            
+            List<BidHistoryResponse> responses = bids.stream()
+                    .map(bid -> {
+                        Boolean isHighestBid = bid.getAmount().equals(finalCurrentHighestAmount);
+                        return BidHistoryResponse.from(bid, isHighestBid);
+                    })
+                    .collect(Collectors.toList());
+            
+            log.info("[사용자 경매별 입찰 내역 조회] 사용자 경매별 입찰 내역 조회 완료 - 경매ID: {}, userUUID: {}, 입찰 개수: {}", 
+                    auctionId, userUUID, responses.size());
+            
+            return responses;
+            
+        } catch (Exception e) {
+            log.error("[사용자 경매별 입찰 내역 조회 실패] 경매ID: {}, userUUID: {}, 오류: {}", 
+                    auctionId, userUUID, e.getMessage(), e);
+            throw new ServiceException(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "입찰 내역 조회 중 오류가 발생했습니다.");
         }
     }
 
