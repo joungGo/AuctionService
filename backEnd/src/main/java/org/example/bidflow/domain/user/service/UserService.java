@@ -8,14 +8,22 @@ import org.example.bidflow.domain.user.entity.User;
 import org.example.bidflow.domain.user.repository.UserRepository;
 import org.example.bidflow.global.exception.ServiceException;
 import org.example.bidflow.global.utils.JwtProvider;
+import org.example.bidflow.domain.bid.repository.BidRepository;
+import org.example.bidflow.domain.user.dto.UserAuctionHistoryResponse;
+import org.example.bidflow.domain.auction.entity.Auction;
+import org.example.bidflow.domain.auction.repository.AuctionRepository;
+import org.example.bidflow.domain.bid.entity.Bid;
+import org.example.bidflow.domain.winner.entity.Winner;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -26,6 +34,8 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final EmailService emailService;
+    private final BidRepository bidRepository;
+    private final AuctionRepository auctionRepository;
 
     public  UserCheckRequest getUserCheck(String userUUID) {
         User user = getUserByUUID(userUUID); //userUUID로 조회
@@ -160,5 +170,56 @@ public class UserService {
         return UserPutRequest.from(savedUser);
     }
 
+    /**
+     * 사용자가 입찰한 경매 ID 목록(distinct) 반환
+     */
+    public List<Long> getAuctionIdsUserBidOn(String userUUID) {
+        User user = getUserByUUID(userUUID);
+        return bidRepository.findDistinctAuctionIdsByUser(user);
+    }
+
+    /**
+     * 사용자가 입찰한 경매 목록(상태, 내 입찰 정보 포함) 반환
+     */
+    public List<UserAuctionHistoryResponse> getUserAuctionHistory(String userUUID) {
+        User user = getUserByUUID(userUUID);
+        List<Long> auctionIds = bidRepository.findDistinctAuctionIdsByUser(user);
+        List<Auction> auctions = auctionRepository.findAllById(auctionIds);
+        return auctions.stream().map(auction -> {
+            // 내 마지막 입찰가
+            List<Bid> myBids = bidRepository.findByAuctionAndUserOrderByBidTimeDesc(auction, user);
+            Integer myLastBidAmount = myBids.isEmpty() ? null : myBids.get(0).getAmount();
+            Integer myHighestBidAmount = myBids.stream().map(Bid::getAmount).max(Integer::compareTo).orElse(null);
+            // 경매 최고 입찰가
+            Integer auctionHighestBidAmount = bidRepository.findMaxAmountByAuction(auction).orElse(null);
+            // 상태 판별
+            String status;
+            boolean isWinner = false;
+            if (auction.getStatus().name().equals("ONGOING")) {
+                status = "진행중";
+            } else if (auction.getStatus().name().equals("FINISHED")) {
+                Winner winner = auction.getWinner();
+                if (winner != null && winner.getUser() != null && winner.getUser().getUserUUID().equals(userUUID)) {
+                    status = "낙찰";
+                    isWinner = true;
+                } else {
+                    status = "패찰";
+                }
+            } else {
+                status = auction.getStatus().name();
+            }
+            return UserAuctionHistoryResponse.builder()
+                    .auctionId(auction.getAuctionId())
+                    .productName(auction.getProduct().getProductName())
+                    .imageUrl(auction.getProduct().getImageUrl())
+                    .status(status)
+                    .myLastBidAmount(myLastBidAmount)
+                    .myHighestBidAmount(myHighestBidAmount)
+                    .auctionHighestBidAmount(auctionHighestBidAmount)
+                    .endTime(auction.getEndTime())
+                    .isWinner(isWinner)
+                    .build();
+        }).collect(Collectors.toList());
+    }
 }
 

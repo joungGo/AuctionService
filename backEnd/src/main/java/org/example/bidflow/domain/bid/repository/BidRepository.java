@@ -36,4 +36,8 @@ public interface BidRepository extends JpaRepository<Bid, Long> {
     // 특정 경매의 최고 입찰가 조회 (JPQL)
     @Query("SELECT MAX(b.amount) FROM Bid b WHERE b.auction = :auction")
     Optional<Integer> findMaxAmountByAuction(@Param("auction") Auction auction);
+
+    // 사용자가 입찰한 경매 ID 목록(distinct) 조회
+    @Query("SELECT DISTINCT b.auction.auctionId FROM Bid b WHERE b.user = :user")
+    List<Long> findDistinctAuctionIdsByUser(@Param("user") User user);
 }

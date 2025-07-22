@@ -17,7 +17,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
+import org.example.bidflow.domain.user.dto.UserAuctionHistoryResponse;
 
 @RequiredArgsConstructor
 @RestController
@@ -178,6 +180,19 @@ public class UserController {
         return isValidCode
                 ? ResponseEntity.ok(new RsData("200", "이메일 인증이 처리되었습니다."))
                 : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new RsData("400", "인증코드가 일치하지 않습니다."));
+    }
+
+    // 마이페이지 - 입찰한 경매 목록 조회
+    @GetMapping("/mypage/auctions")
+    public ResponseEntity<RsData<List<UserAuctionHistoryResponse>>> getUserAuctionHistory(HttpServletRequest request) {
+        String token = cookieUtil.getJwtFromCookie(request);
+        if (token == null || !jwtProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new RsData<>("401", "인증되지 않았습니다.", null));
+        }
+        String userUUID = jwtProvider.parseUserUUID(token);
+        List<UserAuctionHistoryResponse> history = userService.getUserAuctionHistory(userUUID);
+        return ResponseEntity.ok(new RsData<>("200", "입찰한 경매 목록 조회 성공", history));
     }
 
 }
