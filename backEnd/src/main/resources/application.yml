@@ -66,6 +66,20 @@ spring:
           writetimeout: 5000
       auth-code-expiration-millis: 180000  # 30 * 60 * 1000 == 3분
 
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: always # 최초 실행 시만
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: AuctionScheduler
+          jobStore:
+            class: org.quartz.impl.jdbcjobstore.JobStoreTX
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+            tablePrefix: QRTZ_
+
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n"
