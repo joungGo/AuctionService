@@ -36,11 +36,11 @@ public class AuctionSchedulerEvent {
             Set<String> keys = redisTemplate.keys("auction:*");
 
             if (keys == null || keys.isEmpty()) {
-                log.debug("[Scheduler] 현재 진행 중인 경매가 없습니다.");
+                // log.debug("[Scheduler] 현재 진행 중인 경매가 없습니다.");
                 return;
             }
 
-            log.debug("[Scheduler] 경매 상태 검사 시작 - 대상 경매 수: {}", keys.size());
+            // log.debug("[Scheduler] 경매 상태 검사 시작 - 대상 경매 수: {}", keys.size());
 
             int processedCount = 0;
             int finishedCount = 0;
@@ -51,7 +51,7 @@ public class AuctionSchedulerEvent {
                     Optional<Auction> auctionOpt = auctionRepository.findById(auctionId);
                     
                     if (auctionOpt.isEmpty()) {
-                        log.warn("[Scheduler] 존재하지 않는 경매 ID - Redis Key: {}, 경매 ID: {}", key, auctionId);
+                        // log.warn("[Scheduler] 존재하지 않는 경매 ID - Redis Key: {}, 경매 ID: {}", key, auctionId);
                         continue;
                     }
 
@@ -65,29 +65,27 @@ public class AuctionSchedulerEvent {
                         auctionRepository.save(auction);
                         finishedCount++;
                         
-                        log.info("[Scheduler] 경매 종료 처리 완료 - 경매 ID: {}, 상품명: {}, 종료시간: {}, 처리시간: {}", 
-                                auctionId, auction.getProduct().getProductName(), auction.getEndTime(), now);
+                        // log.info("[Scheduler] 경매 종료 처리 완료 - 경매 ID: {}, 상품명: {}, 종료시간: {}, 처리시간: {}", auctionId, auction.getProduct().getProductName(), auction.getEndTime(), now);
 
                         // 즉시 이벤트 발행
                         eventPublisher.publishEvent(new AuctionFinishedEvent(this, auction));
-                        log.debug("[Scheduler] 경매 종료 이벤트 발행 완료 - 경매 ID: {}", auctionId);
+                        // log.debug("[Scheduler] 경매 종료 이벤트 발행 완료 - 경매 ID: {}", auctionId);
                     }
                     
                 } catch (NumberFormatException e) {
-                    log.error("[Scheduler] Redis Key 파싱 오류 - Key: {}, 오류: {}", key, e.getMessage());
+                    // log.error("[Scheduler] Redis Key 파싱 오류 - Key: {}, 오류: {}", key, e.getMessage());
                 } catch (Exception e) {
-                    log.error("[Scheduler] 개별 경매 처리 중 오류 발생 - Key: {}", key, e);
+                    // log.error("[Scheduler] 개별 경매 처리 중 오류 발생 - Key: {}", key, e);
                 }
             }
 
             long endTime = System.currentTimeMillis();
             if (processedCount > 0) {
-                log.info("[Scheduler] 경매 상태 검사 완료 - 검사 대상: {}, 종료 처리: {}, 처리 시간: {}ms", 
-                        processedCount, finishedCount, (endTime - startTime));
+                // log.info("[Scheduler] 경매 상태 검사 완료 - 검사 대상: {}, 종료 처리: {}, 처리 시간: {}ms", processedCount, finishedCount, (endTime - startTime));
             }
             
         } catch (Exception e) {
-            log.error("[Scheduler] 스케줄러 실행 중 예상치 못한 오류 발생", e);
+            // log.error("[Scheduler] 스케줄러 실행 중 예상치 못한 오류 발생", e);
         }
     }
 }
