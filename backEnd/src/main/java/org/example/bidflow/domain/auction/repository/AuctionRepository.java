@@ -28,6 +28,12 @@ public interface AuctionRepository extends JpaRepository<Auction,Long> {
 
     @Query("SELECT a FROM Auction a JOIN FETCH a.product p LEFT JOIN FETCH p.category WHERE a.auctionId = :auctionId")
     Optional<Auction> findByAuctionId(Long auctionId);
+
+    // 스케줄 복구를 위해 필요한 경매들 조회 (UPCOMING 또는 ONGOING 상태)
+    @Query("SELECT a FROM Auction a JOIN FETCH a.product p LEFT JOIN FETCH p.category " +
+           "WHERE a.status IN ('UPCOMING', 'ONGOING') " +
+           "AND (a.startTime > :now OR a.endTime > :now)")
+    List<Auction> findAuctionsNeedingSchedule(LocalDateTime now);
 }
 
 

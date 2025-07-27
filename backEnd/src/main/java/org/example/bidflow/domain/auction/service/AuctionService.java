@@ -18,6 +18,7 @@ import org.example.bidflow.domain.product.repository.ProductRepository;
 import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.annotation.HasRole;
 import org.example.bidflow.global.app.RedisCommon;
+import org.example.bidflow.global.app.AuctionSchedulerService;
 import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class AuctionService {
     private final RedisCommon redisCommon;
     private final UserService userService;
     private final CategoryService categoryService;
+    private final AuctionSchedulerService auctionSchedulerService;
 
     // 사용자-모든 경매 목록을 조회하고 AuctionResponse DTO 리스트로 변환
     public List<AuctionCheckResponse> getAllAuctions()  {
@@ -142,6 +144,9 @@ public class AuctionService {
 
         LocalDateTime expireTime = auction.getEndTime().plusMinutes(2); // starTime: 12:30, endTime: 12:40 -> 12:42(cause. 여유시간(2분)) => TTL: 12:42까지 유효 => 12:42 이후에는 경매 종료 => 경매 종료시(12:40) Winner 테이블에 저장 => Scheduler 로 처리
         redisCommon.setExpireAt(hashKey, expireTime);
+
+        // 경매 스케줄 등록 (Quartz 기반)
+        auctionSchedulerService.scheduleAuction(auction);
 
         // 성공 응답 반환
         return new RsData<>("201", "경매가 등록되었습니다.", AuctionCreateResponse.from(auction));
