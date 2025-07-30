@@ -5,17 +5,17 @@ import org.example.bidflow.data.AuctionStatus;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.example.bidflow.global.app.AuctionFinishedEvent;
+import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.scheduling.quartz.QuartzJobBean;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Component
-public class AuctionEndJob extends QuartzJobBean {
+public class AuctionEndJob implements Job {
 
     @Autowired
     private AuctionRepository auctionRepository;
@@ -25,7 +25,7 @@ public class AuctionEndJob extends QuartzJobBean {
 
     @Override
     @Transactional
-    protected void executeInternal(JobExecutionContext context) throws JobExecutionException {
+    public void execute(JobExecutionContext context) throws JobExecutionException {
         try {
             // JobDataMap에서 auctionId 가져오기
             Long auctionId = context.getJobDetail().getJobDataMap().getLong("auctionId");

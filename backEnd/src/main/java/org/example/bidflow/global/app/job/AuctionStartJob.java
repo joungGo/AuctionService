@@ -4,23 +4,23 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.data.AuctionStatus;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
+import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.quartz.QuartzJobBean;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Component
-public class AuctionStartJob extends QuartzJobBean {
+public class AuctionStartJob implements Job {
 
     @Autowired
     private AuctionRepository auctionRepository;
 
     @Override
     @Transactional
-    protected void executeInternal(JobExecutionContext context) throws JobExecutionException {
+    public void execute(JobExecutionContext context) throws JobExecutionException {
         try {
             // JobDataMap에서 auctionId 가져오기
             Long auctionId = context.getJobDetail().getJobDataMap().getLong("auctionId");
