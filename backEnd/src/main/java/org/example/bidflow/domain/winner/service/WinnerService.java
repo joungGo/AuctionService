@@ -20,7 +20,8 @@ public class WinnerService {
     // 사용자의 낙찰 내역 조회
     @Transactional(readOnly = true)
     public RsData<List<WinnerCheckResponse>> getWinnerList(String userUUID) {
-        List<Winner> winners = winnerRepository.findByUser_UserUUID(userUUID);
+        // N+1 문제 해결된 쿼리 사용
+        List<Winner> winners = winnerRepository.findByUserUUIDWithAuctionAndProduct(userUUID);
 
         // 낙찰자가 존재하지 않을 경우 예외 처리
         if(winners.isEmpty()){
