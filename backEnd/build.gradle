@@ -28,9 +28,6 @@ dependencies {
     // AOP for logging and performance monitoring
     implementation 'org.springframework.boot:spring-boot-starter-aop'
 
-    // Health check endpoint
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
-
     // email
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
