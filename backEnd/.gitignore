@@ -52,3 +52,9 @@ logs/
 *.gz
 log/
 /log/
+
+### Docker & Monitoring ###
+docker-compose.yml
+prometheus-server.yml
+hikaricp_alerts.yml
+grafana/
