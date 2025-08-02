@@ -35,9 +35,9 @@ public class HikariMetricsCollector {
 
     /**
      * HikariCP 커넥션 풀 메트릭을 주기적으로 수집하는 스케줄링 메서드
-     * @Scheduled(fixedRate = 10000): 10초(10,000ms)마다 실행
+     * @Scheduled(fixedRate = 3000): 3초(3,000ms)마다 실행
      */
-    @Scheduled(fixedRate = 5000) // 10초마다 수집
+    @Scheduled(fixedRate = 3000) // 5초마다 수집
     public void collectHikariMetrics() {
         // DataSource가 HikariDataSource 인스턴스인지 확인
         if (dataSource instanceof HikariDataSource) {

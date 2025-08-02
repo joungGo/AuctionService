@@ -43,6 +43,7 @@ db_dev.trace.db
 ### Spring Boot ###
 /src/main/resources/application-dev.yml
 /src/main/resources/application-secret.yml
+/src/main/resources/application-test.yml
 
 ### Logs ###
 logs/
