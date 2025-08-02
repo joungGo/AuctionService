@@ -9,10 +9,16 @@ import org.example.bidflow.domain.auction.dto.*;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.example.bidflow.domain.bid.repository.BidRepository;
+import org.example.bidflow.domain.bid.entity.Bid;
+import org.example.bidflow.domain.category.entity.Category;
+import org.example.bidflow.domain.category.repository.CategoryRepository;
+import org.example.bidflow.domain.category.service.CategoryService;
 import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.product.repository.ProductRepository;
+import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.annotation.HasRole;
 import org.example.bidflow.global.app.RedisCommon;
+import org.example.bidflow.global.app.AuctionSchedulerService;
 import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.stereotype.Service;
@@ -20,6 +26,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
 
 @Service
 @RequiredArgsConstructor
@@ -29,12 +36,28 @@ public class AuctionService {
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
     private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
     private final RedisCommon redisCommon;
+    private final UserService userService;
+    private final CategoryService categoryService;
+    private final AuctionSchedulerService auctionSchedulerService;
 
     // 사용자-모든 경매 목록을 조회하고 AuctionResponse DTO 리스트로 변환
     public List<AuctionCheckResponse> getAllAuctions()  {
+        return getAllAuctionsByCategory(null);
+    }
+
+    // 카테고리별 경매 목록 조회
+    public List<AuctionCheckResponse> getAllAuctionsByCategory(Long categoryId)  {
         // 경매 목록 조회 <AuctionRepository에서 조회>
-        List<Auction> auctions = auctionRepository.findAllAuctions();
+        List<Auction> auctions;
+        if (categoryId != null) {
+            Category category = categoryService.getCategoryEntityById(categoryId);
+            auctions = auctionRepository.findAllAuctionsByCategory(category);
+        } else {
+            auctions = auctionRepository.findAllAuctions();
+        }
+        
         if (auctions.isEmpty()) { // 리스트가 비어있을경우 예외처리
             throw new ServiceException("404", "등록된 경매가 없습니다. 새로운 경매가 등록될 때까지 기다려주세요.");
         }
@@ -85,11 +108,18 @@ public class AuctionService {
             throw new ServiceException("404", "상품 등록 시간은 최소 2일 전부터 가능합니다.");
         }*/
 
+        // 카테고리 조회
+        Category category = null;
+        if (requestDto.getCategoryId() != null) {
+            category = categoryService.getCategoryEntityById(requestDto.getCategoryId());
+        }
+        
         // 상품 정보 저장
         Product product = Product.builder()
                 .productName(requestDto.getProductName())
                 .imageUrl(requestDto.getImageUrl())
                 .description(requestDto.getDescription())
+                .category(category)
                 .build();
         productRepository.save(product);
 
@@ -114,6 +144,9 @@ public class AuctionService {
 
         LocalDateTime expireTime = auction.getEndTime().plusMinutes(2); // starTime: 12:30, endTime: 12:40 -> 12:42(cause. 여유시간(2분)) => TTL: 12:42까지 유효 => 12:42 이후에는 경매 종료 => 경매 종료시(12:40) Winner 테이블에 저장 => Scheduler 로 처리
         redisCommon.setExpireAt(hashKey, expireTime);
+
+        // 경매 스케줄 등록 (Quartz 기반)
+        auctionSchedulerService.scheduleAuction(auction);
 
         // 성공 응답 반환
         return new RsData<>("201", "경매가 등록되었습니다.", AuctionCreateResponse.from(auction));
@@ -141,6 +174,50 @@ public class AuctionService {
         return AuctionDetailResponse.from(auction, amount); // DTO 변환 후 반환
     }
 
+    // 입찰 페이지 전용 상세 정보 반환
+    public AuctionBidDetailResponse getAuctionBidDetail(Long auctionId) {
+        Auction auction = getAuctionWithValidation(auctionId);
+        
+        // Redis에서 실시간 최고 입찰자 정보 조회
+        String hashKey = "auction:" + auctionId;
+        String highestBidderUUID = redisCommon.getFromHash(hashKey, "userUUID", String.class);
+        Integer currentBid = redisCommon.getFromHash(hashKey, "amount", Integer.class);
+        
+        // Redis에 정보가 없으면 DB에서 조회 (폴백)
+        if (currentBid == null) {
+            Bid highestBid = bidRepository.findTopByAuctionOrderByAmountDesc(auction);
+            currentBid = highestBid != null ? highestBid.getAmount() : auction.getStartPrice();
+            highestBidderUUID = highestBid != null ? highestBid.getUser().getUserUUID() : null;
+        }
+        
+        // 최고 입찰자 닉네임 조회
+        String highestBidderNickname = null;
+        if (highestBidderUUID != null) {
+            try {
+                highestBidderNickname = userService.getUserByUUID(highestBidderUUID).getNickname();
+            } catch (Exception e) {
+                log.warn("[최고 입찰자 닉네임 조회 실패] userUUID: {}, 오류: {}", highestBidderUUID, e.getMessage());
+            }
+        }
+        
+        return AuctionBidDetailResponse.builder()
+            .auctionId(auction.getAuctionId())
+            .productName(auction.getProduct().getProductName())
+            .imageUrl(auction.getProduct().getImageUrl())
+            .description(auction.getProduct().getDescription())
+            .startPrice(auction.getStartPrice())
+            .currentBid(currentBid)
+            .minBid(auction.getMinBid())
+            .status(auction.getStatus().toString())
+            .startTime(auction.getStartTime())
+            .endTime(auction.getEndTime())
+            .highestBidderNickname(highestBidderNickname)
+            .highestBidderUUID(highestBidderUUID)
+            .categoryId(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryId() : null)
+            .categoryName(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryName() : null)
+            .build();
+    }
+
     // 경매 조회 및 상태 검증 메서드
     public Auction getAuctionWithValidation(Long auctionId) {
 
@@ -154,6 +231,39 @@ public class AuctionService {
         }*/
 
         return auction;
+    }
+
+    // 기존 경매들에 기본 카테고리 할당 (한 번만 실행)
+    @Transactional
+    public void assignDefaultCategoryToExistingAuctions() {
+        // 기본 카테고리 조회 (첫 번째 카테고리 사용)
+        List<Category> categories = categoryRepository.findAll();
+        if (categories.isEmpty()) {
+            log.warn("카테고리가 없어서 기본 카테고리 할당을 건너뜁니다.");
+            return;
+        }
+        
+        Category defaultCategory = categories.get(0);
+        
+        // 카테고리가 없는 상품들 조회
+        List<Product> productsWithoutCategory = productRepository.findAll().stream()
+                .filter(product -> product.getCategory() == null)
+                .collect(Collectors.toList());
+        
+        for (Product product : productsWithoutCategory) {
+            Product updatedProduct = Product.builder()
+                    .productId(product.getProductId())
+                    .productName(product.getProductName())
+                    .imageUrl(product.getImageUrl())
+                    .description(product.getDescription())
+                    .category(defaultCategory)
+                    .auction(product.getAuction())
+                    .build();
+            productRepository.save(updatedProduct);
+            log.info("상품 '{}'에 기본 카테고리 '{}' 할당", product.getProductName(), defaultCategory.getCategoryName());
+        }
+        
+        log.info("총 {}개 상품에 기본 카테고리 할당 완료", productsWithoutCategory.size());
     }
 
 }

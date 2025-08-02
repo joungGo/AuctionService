@@ -135,7 +135,7 @@ public class PerformanceLoggingAspect {
         }
         
         // 디버그 레벨에서는 모든 메서드 로깅
-        log.debug("[성능 상세] {} - 실행시간: {}ms, 오류여부: {}", operation, executionTime, hasError);
+        // log.debug("[성능 상세] {} - 실행시간: {}ms, 오류여부: {}", operation, executionTime, hasError);
     }
 
     /**

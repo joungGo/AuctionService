@@ -3,6 +3,7 @@ package org.example.bidflow.domain.auction.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.bidflow.domain.auction.dto.AuctionCheckResponse;
 import org.example.bidflow.domain.auction.dto.AuctionDetailResponse;
+import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
 import org.example.bidflow.domain.auction.service.AuctionService;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
@@ -67,10 +68,12 @@ public class AuctionController {
     }
 
     @GetMapping
-    public ResponseEntity<RsData<List<AuctionCheckResponse>>> getAllAuctions() {
+    public ResponseEntity<RsData<List<AuctionCheckResponse>>> getAllAuctions(
+            @RequestParam(required = false) Long categoryId) {
         // AuctionService에서 AuctionResponse 리스트를 반환
-        List<AuctionCheckResponse> response = auctionService.getAllAuctions();
-        RsData<List<AuctionCheckResponse>> rsData = new RsData<>("200", "전체 조회가 완료되었습니다.", response);
+        List<AuctionCheckResponse> response = auctionService.getAllAuctionsByCategory(categoryId);
+        String message = categoryId != null ? "카테고리별 조회가 완료되었습니다." : "전체 조회가 완료되었습니다.";
+        RsData<List<AuctionCheckResponse>> rsData = new RsData<>("200", message, response);
         return ResponseEntity.ok(rsData);
     }
 
@@ -87,5 +90,12 @@ public class AuctionController {
         AuctionDetailResponse response = auctionService.getAuctionDetail(auctionId);
         RsData<AuctionDetailResponse> rsData = new RsData<>("200", "경매가 성공적으로 조회되었습니다.", response);
         return ResponseEntity.ok(rsData);
+    }
+
+    // 입찰 페이지 전용 상세 정보 API
+    @GetMapping("/{auctionId}/bid-detail")
+    public ResponseEntity<AuctionBidDetailResponse> getAuctionBidDetail(@PathVariable Long auctionId) {
+        AuctionBidDetailResponse response = auctionService.getAuctionBidDetail(auctionId);
+        return ResponseEntity.ok(response);
     }
 }

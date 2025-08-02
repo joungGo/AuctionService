@@ -4,10 +4,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.auction.dto.AuctionBidRequest;
 import org.example.bidflow.domain.bid.dto.model.response.BidCreateResponse;
+import org.example.bidflow.domain.bid.dto.model.response.BidHistoryResponse;
 import org.example.bidflow.domain.bid.service.BidService;
 import org.example.bidflow.domain.bid.dto.model.response.webSocket.WebSocketResponse;
+import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.utils.CookieUtil;
 import org.example.bidflow.global.utils.JwtProvider;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -23,7 +29,7 @@ import org.example.bidflow.global.exception.ServiceException;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/auctions")
+@RequestMapping("/api/auctions")
 public class BidController {
 
     private final BidService bidService;
@@ -79,6 +85,7 @@ public class BidController {
                     .localDateTime(LocalDateTime.now())
                     .nickname(response.getNickname())
                     .currentBid(request.getAmount())
+                    .userUUID(userUUID)  // 최고 입찰자의 UUID 포함
                     .build();
 
             simpMessagingTemplate.convertAndSend("/sub/auction/" + request.getAuctionId(), res);
@@ -94,6 +101,112 @@ public class BidController {
         }
     }
 
+    // 특정 경매의 입찰 내역 조회 API
+    @GetMapping("/{auctionId}/bids")
+    public ResponseEntity<RsData<List<BidHistoryResponse>>> getBidHistoryByAuction(@PathVariable Long auctionId) {
+        log.info("[REST API] 경매 입찰 내역 조회 요청 - 경매ID: {}", auctionId);
+        
+        try {
+            List<BidHistoryResponse> bidHistory = bidService.getBidHistoryByAuction(auctionId);
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>("200", "입찰 내역 조회가 완료되었습니다.", bidHistory);
+            return ResponseEntity.ok(rsData);
+        } catch (ServiceException e) {
+            log.error("[REST API] 경매 입찰 내역 조회 실패 - 경매ID: {}, 오류: {}", auctionId, e.getMsg());
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>(e.getCode(), e.getMsg(), null);
+            return ResponseEntity.badRequest().body(rsData);
+        } catch (Exception e) {
+            log.error("[REST API] 경매 입찰 내역 조회 중 예상치 못한 오류 - 경매ID: {}, 오류: {}", auctionId, e.getMessage(), e);
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>("500", "서버 오류가 발생했습니다.", null);
+            return ResponseEntity.internalServerError().body(rsData);
+        }
+    }
+
+    // 특정 경매의 입찰 내역 페이징 조회 API
+    @GetMapping("/{auctionId}/bids/paging")
+    public ResponseEntity<RsData<Page<BidHistoryResponse>>> getBidHistoryByAuctionWithPaging(
+            @PathVariable Long auctionId,
+            @PageableDefault(size = 20, sort = "bidTime") Pageable pageable) {
+        log.info("[REST API] 경매 입찰 내역 페이징 조회 요청 - 경매ID: {}, 페이지: {}", auctionId, pageable.getPageNumber());
+        
+        try {
+            Page<BidHistoryResponse> bidHistoryPage = bidService.getBidHistoryByAuctionWithPaging(auctionId, pageable);
+            RsData<Page<BidHistoryResponse>> rsData = new RsData<>("200", "입찰 내역 페이징 조회가 완료되었습니다.", bidHistoryPage);
+            return ResponseEntity.ok(rsData);
+        } catch (ServiceException e) {
+            log.error("[REST API] 경매 입찰 내역 페이징 조회 실패 - 경매ID: {}, 오류: {}", auctionId, e.getMsg());
+            RsData<Page<BidHistoryResponse>> rsData = new RsData<>(e.getCode(), e.getMsg(), null);
+            return ResponseEntity.badRequest().body(rsData);
+        } catch (Exception e) {
+            log.error("[REST API] 경매 입찰 내역 페이징 조회 중 예상치 못한 오류 - 경매ID: {}, 오류: {}", auctionId, e.getMessage(), e);
+            RsData<Page<BidHistoryResponse>> rsData = new RsData<>("500", "서버 오류가 발생했습니다.", null);
+            return ResponseEntity.internalServerError().body(rsData);
+        }
+    }
+
+    // 특정 사용자의 입찰 내역 조회 API
+    @GetMapping("/bids/my")
+    public ResponseEntity<RsData<List<BidHistoryResponse>>> getMyBidHistory(@CookieValue(name = "jwt-token", required = false) String token) {
+        log.info("[REST API] 내 입찰 내역 조회 요청");
+        
+        try {
+            if (token == null || !jwtProvider.validateToken(token)) {
+                RsData<List<BidHistoryResponse>> rsData = new RsData<>("401", "인증이 필요합니다.", null);
+                return ResponseEntity.status(401).body(rsData);
+            }
+            
+            String userUUID = jwtProvider.parseUserUUID(token);
+            if (userUUID == null) {
+                RsData<List<BidHistoryResponse>> rsData = new RsData<>("401", "사용자 정보를 확인할 수 없습니다.", null);
+                return ResponseEntity.status(401).body(rsData);
+            }
+            
+            List<BidHistoryResponse> bidHistory = bidService.getBidHistoryByUser(userUUID);
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>("200", "내 입찰 내역 조회가 완료되었습니다.", bidHistory);
+            return ResponseEntity.ok(rsData);
+        } catch (ServiceException e) {
+            log.error("[REST API] 내 입찰 내역 조회 실패 - 오류: {}", e.getMsg());
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>(e.getCode(), e.getMsg(), null);
+            return ResponseEntity.badRequest().body(rsData);
+        } catch (Exception e) {
+            log.error("[REST API] 내 입찰 내역 조회 중 예상치 못한 오류 - 오류: {}", e.getMessage(), e);
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>("500", "서버 오류가 발생했습니다.", null);
+            return ResponseEntity.internalServerError().body(rsData);
+        }
+    }
+
+    // 특정 경매에서 특정 사용자의 입찰 내역 조회 API
+    @GetMapping("/{auctionId}/bids/my")
+    public ResponseEntity<RsData<List<BidHistoryResponse>>> getMyBidHistoryByAuction(
+            @PathVariable Long auctionId,
+            @CookieValue(name = "jwt-token", required = false) String token) {
+        log.info("[REST API] 내 경매별 입찰 내역 조회 요청 - 경매ID: {}", auctionId);
+        
+        try {
+            if (token == null || !jwtProvider.validateToken(token)) {
+                RsData<List<BidHistoryResponse>> rsData = new RsData<>("401", "인증이 필요합니다.", null);
+                return ResponseEntity.status(401).body(rsData);
+            }
+            
+            String userUUID = jwtProvider.parseUserUUID(token);
+            if (userUUID == null) {
+                RsData<List<BidHistoryResponse>> rsData = new RsData<>("401", "사용자 정보를 확인할 수 없습니다.", null);
+                return ResponseEntity.status(401).body(rsData);
+            }
+            
+            List<BidHistoryResponse> bidHistory = bidService.getBidHistoryByAuctionAndUser(auctionId, userUUID);
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>("200", "내 경매별 입찰 내역 조회가 완료되었습니다.", bidHistory);
+            return ResponseEntity.ok(rsData);
+        } catch (ServiceException e) {
+            log.error("[REST API] 내 경매별 입찰 내역 조회 실패 - 경매ID: {}, 오류: {}", auctionId, e.getMsg());
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>(e.getCode(), e.getMsg(), null);
+            return ResponseEntity.badRequest().body(rsData);
+        } catch (Exception e) {
+            log.error("[REST API] 내 경매별 입찰 내역 조회 중 예상치 못한 오류 - 경매ID: {}, 오류: {}", auctionId, e.getMessage(), e);
+            RsData<List<BidHistoryResponse>> rsData = new RsData<>("500", "서버 오류가 발생했습니다.", null);
+            return ResponseEntity.internalServerError().body(rsData);
+        }
+    }
+
     /**
      * 에러 메시지를 클라이언트에게 전송
      */
@@ -106,6 +219,7 @@ public class BidController {
                     .localDateTime(LocalDateTime.now())
                     .nickname("System")
                     .currentBid(0)
+                    .userUUID(null)  // 에러 시에는 userUUID 없음
                     .build();
 
             simpMessagingTemplate.convertAndSend("/sub/auction/" + auctionId, errorRes);

@@ -17,6 +17,8 @@ public class AuctionCheckResponse {
     private String status;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private Long categoryId;
+    private String categoryName;
 
 
 
@@ -30,6 +32,8 @@ public class AuctionCheckResponse {
                     .status(auction.getStatus().toString())  // 경매 상태 Enum을 String으로 변환하기
                     .startTime(auction.getStartTime())  //경매 시작 시간
                     .endTime(auction.getEndTime())  //경매 종료 시간
+                    .categoryId(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryId() : null)
+                    .categoryName(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryName() : null)
                     .build();
         }
 

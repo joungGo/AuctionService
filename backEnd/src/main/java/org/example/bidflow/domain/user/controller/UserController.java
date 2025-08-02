@@ -17,7 +17,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
+import org.example.bidflow.domain.user.dto.UserAuctionHistoryResponse;
+import org.example.bidflow.domain.user.dto.FavoriteResponse;
+import org.example.bidflow.domain.user.service.FavoriteService;
 
 @RequiredArgsConstructor
 @RestController
@@ -30,6 +34,7 @@ public class UserController {
     private final EmailService emailService;
     private final CookieUtil cookieUtil;
     private final JwtProvider jwtProvider;
+    private final FavoriteService favoriteService;
 
     // 회원가입
     @PostMapping("/signup")
@@ -178,6 +183,58 @@ public class UserController {
         return isValidCode
                 ? ResponseEntity.ok(new RsData("200", "이메일 인증이 처리되었습니다."))
                 : ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new RsData("400", "인증코드가 일치하지 않습니다."));
+    }
+
+    // 마이페이지 - 입찰한 경매 목록 조회
+    @GetMapping("/mypage/auctions")
+    public ResponseEntity<RsData<List<UserAuctionHistoryResponse>>> getUserAuctionHistory(HttpServletRequest request) {
+        String token = cookieUtil.getJwtFromCookie(request);
+        if (token == null || !jwtProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new RsData<>("401", "인증되지 않았습니다.", null));
+        }
+        String userUUID = jwtProvider.parseUserUUID(token);
+        List<UserAuctionHistoryResponse> history = userService.getUserAuctionHistory(userUUID);
+        return ResponseEntity.ok(new RsData<>("200", "입찰한 경매 목록 조회 성공", history));
+    }
+
+    // 마이페이지 - 관심목록(찜) 조회
+    @GetMapping("/mypage/favorites")
+    public ResponseEntity<RsData<List<FavoriteResponse>>> getFavorites(HttpServletRequest request) {
+        String token = cookieUtil.getJwtFromCookie(request);
+        if (token == null || !jwtProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new RsData<>("401", "인증되지 않았습니다.", null));
+        }
+        String userUUID = jwtProvider.parseUserUUID(token);
+        List<FavoriteResponse> favorites = favoriteService.getFavoriteResponses(userUUID);
+        return ResponseEntity.ok(new RsData<>("200", "관심목록 조회 성공", favorites));
+    }
+
+    // 관심 경매 등록
+    @PostMapping("/favorites")
+    public ResponseEntity<RsData<FavoriteResponse>> addFavorite(HttpServletRequest request, @RequestParam Long auctionId) {
+        String token = cookieUtil.getJwtFromCookie(request);
+        if (token == null || !jwtProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new RsData<>("401", "인증되지 않았습니다.", null));
+        }
+        String userUUID = jwtProvider.parseUserUUID(token);
+        FavoriteResponse response = FavoriteService.toResponse(favoriteService.addFavorite(userUUID, auctionId));
+        return ResponseEntity.ok(new RsData<>("200", "관심 경매 등록 성공", response));
+    }
+
+    // 관심 경매 해제
+    @DeleteMapping("/favorites")
+    public ResponseEntity<RsData<String>> removeFavorite(HttpServletRequest request, @RequestParam Long auctionId) {
+        String token = cookieUtil.getJwtFromCookie(request);
+        if (token == null || !jwtProvider.validateToken(token)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new RsData<>("401", "인증되지 않았습니다.", null));
+        }
+        String userUUID = jwtProvider.parseUserUUID(token);
+        favoriteService.removeFavorite(userUUID, auctionId);
+        return ResponseEntity.ok(new RsData<>("200", "관심 경매 해제 성공", null));
     }
 
 }
