@@ -43,6 +43,8 @@ db_dev.trace.db
 ### Spring Boot ###
 /src/main/resources/application-dev.yml
 /src/main/resources/application-secret.yml
+/src/main/resources/application-test.yml
+/src/main/resources/application-pro.yml
 
 ### Logs ###
 logs/
@@ -52,3 +54,9 @@ logs/
 *.gz
 log/
 /log/
+
+### Docker & Monitoring ###
+docker-compose.yml
+prometheus-server.yml
+hikaricp_alerts.yml
+grafana/

@@ -3,9 +3,8 @@ package org.example.bidflow.global.messaging.listener;
 import org.example.bidflow.global.messaging.dto.MessagePayload;
 
 /**
- * 실제 메시지를 받아 로직 처리(핸들링)라는 Listener
- * Subscribe의 onMessage 호출되거나,
- * 혹은 @KafkaListener 등을 통해 직접 로직 처리 가능할 듯!
+ * 실제 메시지를 받아 로직 처리(핸들링)하는 Listener
+ * Subscribe의 onMessage 호출을 통해 메시지를 처리합니다.
  */
 
 public interface MessageListener {

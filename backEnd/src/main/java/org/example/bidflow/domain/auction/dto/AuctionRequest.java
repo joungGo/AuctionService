@@ -19,4 +19,6 @@ public class AuctionRequest {
 
     private String imageUrl;
     private String description;
+    
+    private Long categoryId; // 카테고리 ID 추가
 }

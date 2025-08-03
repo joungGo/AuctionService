@@ -37,10 +37,14 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:password}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      auto-commit: false
-      connection-timeout: 30000
-      maximum-pool-size: 20
-      minimum-idle: 10
+      auto-commit: false # 커넥션 반환 시 자동 커밋 비활성화
+      maximum-pool-size: 20 # 커넥션 풀의 최대 커넥션 수
+      minimum-idle: 5 # 풀에서 유지할 최소 유휴 커넥션 수
+      connection-timeout: 30000 # 커넥션 획득 최대 대기 시간(ms)
+      idle-timeout: 600000 # 유휴 커넥션 최대 유지 시간(ms)
+      max-lifetime: 1800000 # 커넥션의 최대 생존 시간(ms)
+      leak-detection-threshold: 60000 # 커넥션 누수 감지 임계값(ms)
+      pool-name: "AuctionHikariCP" # 커넥션 풀 이름
 
   jpa:
     open-in-view: false
@@ -48,6 +52,8 @@ spring:
       ddl-auto: update
     show-sql: false
     database-platform: org.hibernate.dialect.MySQL8Dialect
+
+
 
   mail:
     host: smtp.gmail.com
@@ -65,6 +71,20 @@ spring:
           timeout: 5000
           writetimeout: 5000
       auth-code-expiration-millis: 180000  # 30 * 60 * 1000 == 3분
+
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: always # 최초 실행 시만
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: AuctionScheduler
+          jobStore:
+            class: org.quartz.impl.jdbcjobstore.JobStoreTX
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+            tablePrefix: QRTZ_
 
 logging:
   pattern:
@@ -116,10 +136,30 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus # 노출할 actuator 엔드포인트 목록
+      base-path: /actuator # actuator 엔드포인트의 기본 경로
+
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: when-authorized # 인증된 사용자에게만 health 상세 정보 제공
+    metrics:
+      access: unrestricted
+    prometheus:
+      enabled: true # prometheus 엔드포인트 활성화
+
+  metrics:
+    tags:
+      application: ${spring.application.name} # 메트릭에 애플리케이션 이름 태그 추가
+      environment: ${spring.profiles.active:default} # 메트릭에 환경 태그 추가
+
+    enable:
+      hikaricp: true # HikariCP 커넥션 풀 메트릭 활성화
+
+    distribution:
+      percentiles-histogram:
+        hikaricp.connections: true # HikariCP 커넥션 수에 대한 히스토그램 활성화
+      percentiles:
+        hikaricp.connections: 0.5, 0.95, 0.99 # HikariCP 커넥션 수에 대한 퍼센타일(50%, 95%, 99%) 수집
 
 origin:
   ip:
@@ -134,3 +174,9 @@ origin:
       - https://*.vercel.app
       - https://auction-service-fe.vercel.app
       - https://localhost:3000
+
+# 쿠키 기반 인증 설정 (로컬 환경 기준)
+cookie:
+  secure: false     # 로컬 HTTP 환경
+  same-site: Lax    # 로컬 환경에서 적절한 설정
+  domain:           # 도메인 설정 없음

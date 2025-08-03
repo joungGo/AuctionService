@@ -3,6 +3,7 @@ package org.example.bidflow.domain.product.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.example.bidflow.domain.auction.entity.Auction;
+import org.example.bidflow.domain.category.entity.Category;
 
 @Entity
 @Getter
@@ -25,6 +26,10 @@ public class Product {
 
     @Column(name = "DESCRIPTION")
     private String description;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "CATEGORY_ID")
+    private Category category;
 
     @OneToOne(mappedBy = "product", cascade = CascadeType.ALL)
     private Auction auction;

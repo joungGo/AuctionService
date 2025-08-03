@@ -28,9 +28,6 @@ dependencies {
     // AOP for logging and performance monitoring
     implementation 'org.springframework.boot:spring-boot-starter-aop'
 
-    // Health check endpoint
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
-
     // email
     implementation 'org.springframework.boot:spring-boot-starter-mail'
 
@@ -59,6 +56,13 @@ dependencies {
     implementation 'org.springframework.session:spring-session-data-redis'
 
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
+    // Quartz for scheduling tasks
+    implementation 'org.springframework.boot:spring-boot-starter-quartz'
+    // starter actuator for monitoring
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // prometheus
+    implementation 'io.micrometer:micrometer-registry-prometheus'
 }
 
 tasks.named('test') {
