@@ -79,34 +79,6 @@ jobs:
             
             # Docker 네트워크 생성 (존재하지 않는 경우만)
             sudo docker network create auction-network || true
-
-            # MySQL 컨테이너 상태 확인
-            if ! sudo docker ps -q -f "name=mysql-server" | grep -q .; then
-            
-              # MySQL 실행
-              sudo docker run -d \
-                --name mysql-server \
-                -e MYSQL_DATABASE=auctionService \
-                -e MYSQL_USER=${{ secrets.MYSQL_USER }} \
-                -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} \
-                -p 3306:3306 \
-                --network auction-network \
-                -v mysql-data:/var/lib/mysql \
-                mysql:latest
-            fi
-
-            # Redis 컨테이너 상태 확인
-            if ! sudo docker ps -q -f "name=redis-server" | grep -q .; then
-            
-              # Redis 실행
-              sudo docker run -d \
-                --name redis-server \
-                -e REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }} \
-                -p 6379:6379 \
-                --network auction-network \
-                -v redis-data:/data \
-                redis:latest --requirepass ${{ secrets.REDIS_PASSWORD }}
-            fi
             
             # Docker 컨테이너 실행
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/bidflow:${{ github.sha }}
