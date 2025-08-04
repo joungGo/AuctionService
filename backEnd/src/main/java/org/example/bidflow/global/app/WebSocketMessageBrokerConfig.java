@@ -29,10 +29,7 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
         registry.addEndpoint("/ws")         // -> ws://localhost:8080/ws
                 .setAllowedOrigins(originConfig.getFrontend().toArray(new String[0])) // 실제 origin 목록 사용
                 .setAllowedOriginPatterns("*") // 추가 패턴 허용
-                .addInterceptors(stompHandshakeHandler) // HandshakeInterceptor 추가 (JWT 검증)
-                .withSockJS() // ALB 환경에서 안정성을 위해 SockJS 추가
-                .setStreamBytesLimit(512 * 1024) // ALB를 위한 설정
-                .setHttpMessageCacheSize(1000)
-                .setDisconnectDelay(30 * 1000);
+                .addInterceptors(stompHandshakeHandler); // HandshakeInterceptor 추가 (JWT 검증)
+        // 쿠키 기반 인증을 위해 SockJS 제거 - 네이티브 WebSocket 사용
     }
 }

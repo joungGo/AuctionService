@@ -10,6 +10,7 @@
 - AWS ALB 배포 환경에서는 WebSocket 연결 실패
 - STOMP 연결 에러 발생
 - **Vercel(HTTPS)에서 AWS ALB로의 연결 실패**
+- **쿠키 기반 인증을 위해 SockJS 사용 불가**
 
 ## 해결 방안
 
@@ -42,68 +43,45 @@ server:
   - 클라이언트의 실제 IP와 프로토콜 정보 획득
   - Spring Boot 2.2+ 에서 권장하는 설정 방식
 
-### 2. WebSocketMessageBrokerConfig.java 설정 강화
+### 2. WebSocketMessageBrokerConfig.java 설정 (쿠키 기반 인증)
 
-#### SockJS 설정 최적화 (Vercel 호환성)
+#### 네이티브 WebSocket 설정 (SockJS 제거)
 
 ```java
 @Override
 public void registerStompEndpoints(StompEndpointRegistry registry) {
     registry.addEndpoint("/ws")
             .setAllowedOrigins(originConfig.getFrontend().toArray(new String[0]))
-            .addInterceptors(stompHandshakeHandler)
-            .withSockJS()  // Vercel 환경에서 안정성을 위해 필수
-            .setStreamBytesLimit(512 * 1024) // ALB를 위한 설정
-            .setHttpMessageCacheSize(1000)
-            .setDisconnectDelay(30 * 1000);
+            .addInterceptors(stompHandshakeHandler);
+    // 쿠키 기반 인증을 위해 SockJS 제거 - 네이티브 WebSocket 사용
 }
 ```
 
 **설정 설명:**
 
-- `withSockJS()`: Vercel 환경에서 안정적인 연결을 위해 필수
-  - ALB의 WebSocket 제한을 우회
-  - Fallback 메커니즘 제공
-
-- `setStreamBytesLimit(512 * 1024)`: 스트림 바이트 제한을 512KB로 설정
-  - ALB 환경에서 대용량 메시지 처리 지원
-  - WebSocket 프레임 크기 제한 해제
-
-- `setHttpMessageCacheSize(1000)`: HTTP 메시지 캐시 크기를 1000으로 설정
-  - 다중 클라이언트 연결 시 성능 최적화
-  - 메시지 버퍼링 효율성 향상
-
-- `setDisconnectDelay(30 * 1000)`: 연결 해제 지연 시간을 30초로 설정
-  - ALB의 연결 유지 시간과 동기화
-  - 갑작스러운 연결 해제 방지
+- **SockJS 제거 이유**: 쿠키 기반 인증과 호환성 문제
+  - SockJS의 HTTP 폴링 단계에서 쿠키 전송이 불안정
+  - 네이티브 WebSocket이 쿠키 전송에 더 안정적
 
 ### 3. 프론트엔드 설정 (Vercel)
 
-#### SockJS 클라이언트 사용
+#### 네이티브 WebSocket 클라이언트 사용
 
 ```typescript
 // socket.ts
-import SockJS from "sockjs-client";
-
 const getWsUrl = () => {
   if (window.location.protocol === 'https:') {
-    // 프로덕션 환경 - SockJS 사용
-    return 'https://bidflow.cloud/ws';
+    // 프로덕션 환경 - 네이티브 WebSocket 사용
+    return 'wss://bidflow.cloud/ws';
   }
-  return 'http://localhost:8080/ws';
+  return 'ws://localhost:8080/ws';
 };
 
 export const connectStomp = () => {
   stompClient = new Client({
     webSocketFactory: () => {
       const wsUrl = getWsUrl();
-      
-      // 프로덕션 환경에서는 SockJS 사용
-      if (window.location.protocol === 'https:') {
-        return new SockJS(wsUrl);
-      }
-      
-      // 개발 환경에서는 네이티브 WebSocket 사용
+      console.log(`[socket.ts] Creating native WebSocket connection to: ${wsUrl}`);
       return new WebSocket(wsUrl);
     },
     // ... 기타 설정
@@ -129,20 +107,20 @@ origin:
 ## Vercel + AWS ALB 환경에서의 WebSocket 동작 방식
 
 1. **클라이언트 연결 요청**
-   - Vercel: `https://auction-service-fe.vercel.app`에서 SockJS 연결 시도
-   - 목적지: `https://bidflow.cloud/ws`
+   - Vercel: `https://auction-service-fe.vercel.app`에서 네이티브 WebSocket 연결 시도
+   - 목적지: `wss://bidflow.cloud/ws`
 
-2. **SockJS 핸드셰이크**
-   - SockJS가 HTTP 폴링으로 시작하여 WebSocket으로 업그레이드
-   - ALB의 WebSocket 제한을 우회
+2. **WebSocket 핸드셰이크**
+   - 네이티브 WebSocket 업그레이드 요청
+   - 쿠키가 자동으로 전송됨
 
 3. **ALB 처리**
-   - HTTPS 리스너가 SockJS 요청 수신
+   - HTTPS 리스너가 WebSocket 업그레이드 요청 수신
    - Target Group으로 요청 전달 (Sticky Session 활용)
 
 4. **백엔드 처리**
-   - SockJS 설정으로 안정적인 연결 처리
-   - JWT 토큰 검증 및 사용자 세션 생성
+   - StompHandshakeHandler에서 쿠키에서 JWT 토큰 추출
+   - 인증 성공 시 WebSocket 연결 허용
 
 5. **메시지 전송**
    - STOMP 프로토콜을 통한 양방향 통신
@@ -170,13 +148,18 @@ origin:
   - Inbound: HTTP(8080) from ALB Security Group
   - Outbound: All traffic
 
+### 4. ALB WebSocket 지원 확인
+- **ALB 버전**: Application Load Balancer v2 이상
+- **WebSocket 지원**: 기본적으로 지원 (HTTP/1.1 업그레이드)
+- **연결 유지**: Idle Timeout 설정 확인 (기본 60초)
+
 ## 모니터링 및 디버깅
 
 ### 로그 확인 방법
 
 ```bash
 # WebSocket 연결 관련 로그 확인
-tail -f logs/bidflow-application.log | grep -E "(WebSocket|STOMP|SockJS)"
+tail -f logs/bidflow-application.log | grep -E "(WebSocket|STOMP)"
 
 # ALB 관련 로그 확인
 tail -f logs/bidflow-application.log | grep -E "(X-Forwarded|Forward)"
@@ -193,7 +176,6 @@ logging:
   level:
     org.springframework.web.socket: DEBUG
     org.springframework.messaging: DEBUG
-    org.springframework.web.socket.sockjs: DEBUG
 ```
 
 ## 추가 고려사항
@@ -211,11 +193,11 @@ logging:
 ### 3. 장애 대응
 - WebSocket 연결 수 제한 고려
 - 메모리 사용량 모니터링
-- SockJS Fallback 메커니즘 활용
+- ALB Idle Timeout 설정 조정
 
 ## 결론
 
-Vercel과 AWS ALB 환경에서 안정적인 WebSocket 연결을 위해서는 SockJS 사용이 필수적입니다. 이는 ALB의 WebSocket 제한을 우회하고, Vercel의 HTTPS 환경에서 안정적인 연결을 보장합니다.
+쿠키 기반 인증을 사용하는 환경에서는 네이티브 WebSocket이 SockJS보다 더 안정적입니다. AWS ALB가 WebSocket을 기본적으로 지원하므로, 적절한 설정만으로 안정적인 연결이 가능합니다.
 
 ---
 
