@@ -31,6 +31,12 @@ BACKEND_URL=http://52.65.242.120:8080
 #### 3. 백엔드 애플리케이션 설정
 - `application.yml`의 origin 설정에 Load Balancer DNS 추가
 - WebSocket 설정이 Load Balancer 환경에 최적화되어 있는지 확인
+- Spring Boot 3.4.3 호환 WebSocket 설정 적용
+
+#### 4. WebSocket 최적화 설정
+- Tomcat 연결 풀 설정: `max-connections: 8192`
+- 스레드 풀 설정: `max: 200`, `min-spare: 10`
+- HTTP 헤더 크기: `max-http-header-size: 8192`
 
 ## WebSocket 연결 문제 해결
 

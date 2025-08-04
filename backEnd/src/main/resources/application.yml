@@ -14,6 +14,12 @@ server:
     # WebSocket을 위한 추가 설정
     max-http-header-size: 8192
     connection-timeout: 20000
+    # WebSocket 연결 최적화 설정
+    max-connections: 8192
+    accept-count: 100
+    threads:
+      max: 200
+      min-spare: 10
   # HTTP → HTTPS 리다이렉트 설정 (선택사항)
   forward-headers-strategy: native
 
