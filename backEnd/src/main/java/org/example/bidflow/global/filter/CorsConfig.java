@@ -22,13 +22,13 @@ public class CorsConfig {
         config.addAllowedMethod("*");
         config.setAllowCredentials(true);
 
-        // WebSocket 전용 CORS 설정 - 실제 origin 목록 사용
+        // WebSocket 전용 CORS 설정 - 쿠키 전달을 위해 allowCredentials true로 설정
         CorsConfiguration wsConfig = new CorsConfiguration();
         originConfig.getFrontend().forEach(wsConfig::addAllowedOrigin);
         wsConfig.addAllowedOriginPattern("*");
         wsConfig.addAllowedHeader("*");
         wsConfig.addAllowedMethod("*");
-        wsConfig.setAllowCredentials(false);
+        wsConfig.setAllowCredentials(true); // WebSocket에서도 쿠키 허용
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
