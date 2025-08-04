@@ -14,7 +14,7 @@ NEXT_PUBLIC_API_URL=https://bidflow.cloud/api
 NEXT_PUBLIC_WS_URL=wss://Load-Balancer-114836647.ap-southeast-2.elb.amazonaws.com/ws
 
 # Backend URL for API proxy (server-side only)
-BACKEND_URL=http://52.65.242.120:8080
+BACKEND_URL=http://13.125.44.217:8080
 ```
 
 ### 백엔드 (AWS) 설정
