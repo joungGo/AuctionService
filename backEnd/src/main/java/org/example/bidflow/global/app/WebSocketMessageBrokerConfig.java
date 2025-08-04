@@ -29,9 +29,6 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
         registry.addEndpoint("/ws")         // -> ws://localhost:8080/ws
                 .setAllowedOrigins(originConfig.getFrontend().toArray(new String[0])) // 실제 origin 목록 사용
                 .setAllowedOriginPatterns("*") // 추가 패턴 허용
-                .setStreamBytesLimit(512 * 1024) // ALB를 위한 설정 - 대용량 메시지 처리 지원
-                .setHttpMessageCacheSize(1000) // HTTP 메시지 캐시 크기 설정
-                .setDisconnectDelay(30 * 1000) // 연결 해제 지연 시간 설정
                 .addInterceptors(stompHandshakeHandler); // HandshakeInterceptor 추가 (JWT 검증)
         // SockJS 및 관련 옵션 모두 제거
     }
