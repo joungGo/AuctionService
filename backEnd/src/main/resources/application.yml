@@ -171,8 +171,8 @@ origin:
   ip:
     frontend:
       - http://localhost:3000
-      - http://43.203.21.172:3000
-      - http://43.203.21.172:*
+      - http://13.125.44.217:3000
+      - http://13.125.44.217:*
       - http://43.201.193.75:8080
       - http://43.201.193.75:*
       - https://auctionservice.site
