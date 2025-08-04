@@ -181,7 +181,9 @@ origin:
       - https://auction-service-fe.vercel.app
       - https://localhost:3000
       - https://Load-Balancer-114836647.ap-southeast-2.elb.amazonaws.com
+      - http://Load-Balancer-114836647.ap-southeast-2.elb.amazonaws.com
       - wss://Load-Balancer-114836647.ap-southeast-2.elb.amazonaws.com
+      - ws://Load-Balancer-114836647.ap-southeast-2.elb.amazonaws.com
 
 # 쿠키 기반 인증 설정 (로컬 환경 기준)
 cookie:
