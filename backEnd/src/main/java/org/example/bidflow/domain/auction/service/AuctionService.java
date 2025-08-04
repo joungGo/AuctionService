@@ -24,6 +24,7 @@ import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
@@ -103,7 +104,7 @@ public class AuctionService {
         }
 
         // 최소 등록 시간 검증 (현재 시간 기준 최소 2일 전)
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         if (requestDto.getStartTime().isBefore(now.plusDays(2))) {
             throw new ServiceException("404", "상품 등록 시간은 최소 2일 전부터 가능합니다.");
         }*/

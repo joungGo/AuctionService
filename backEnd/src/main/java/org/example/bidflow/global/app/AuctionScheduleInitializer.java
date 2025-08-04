@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Slf4j
@@ -27,7 +28,7 @@ public class AuctionScheduleInitializer implements ApplicationRunner {
         log.info("[AuctionScheduleInitializer] 경매 스케줄 복구 시작");
         
         try {
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
             
             // 1. 과거 경매 상태 자동 수정
             fixPastAuctionStatuses(now);

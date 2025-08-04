@@ -21,8 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.example.bidflow.data.AuctionStatus;
 
 @Slf4j
 @Service
@@ -41,7 +43,7 @@ public class BidService {
                 auctionId, request.getAmount(), userUUID);
         
         String hashKey = "auction:" + auctionId;
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
         try {
             // 유저 및 경매 정보 가져오기 (userUUID는 파라미터로 받음)
@@ -72,7 +74,7 @@ public class BidService {
                     auctionId, currentBidAmount, request.getAmount(), user.getNickname());
 
             // DB 저장 (낙찰용 로그로 남김)
-            Bid bid = Bid.createBid(auction, user, request.getAmount(), LocalDateTime.now());
+            Bid bid = Bid.createBid(auction, user, request.getAmount(), LocalDateTime.now(ZoneId.of("Asia/Seoul")));
             bidRepository.save(bid);
             
             long endTime = System.currentTimeMillis();
