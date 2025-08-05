@@ -1,0 +1,405 @@
+name: Monitoring Deploy To AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for monitoring deployment'
+        required: false
+        type: string
+        default: 'Manual monitoring deployment'
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: main  # Always deploy from main branch
+
+      - name: Display deployment info
+        run: |
+          echo "🚀 Deploying monitoring stack to production"
+          echo "📝 Reason: ${{ github.event.inputs.reason }}"
+          echo "🌿 Branch: main"
+          echo "👤 Triggered by: ${{ github.actor }}"
+          echo "🎯 Target: ${{ secrets.MONITORING_EC2_HOST }}"
+          echo "📊 Monitoring Spring Boot: ${{ secrets.EC2_HOST }}:8080"
+
+      - name: Generate Prometheus configuration
+        id: prometheus-config
+        run: |
+          cat > prometheus-server.prod.yml << 'EOF'
+          # Prometheus 운영환경 설정 파일
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          rule_files:
+            - "hikaricp_alerts.yml"
+
+          scrape_configs:
+            # Spring Boot 애플리케이션 메트릭 수집
+            - job_name: 'auction-service-prod'
+              static_configs:
+                - targets: ['${{ secrets.EC2_HOST }}:8080']
+                  labels:
+                    application: 'auction-service'
+                    environment: 'production'
+                    instance: 'ec2-auction-service'
+              metrics_path: '/actuator/prometheus'
+              scrape_interval: 15s
+              scrape_timeout: 10s
+
+            # Prometheus 자체 메트릭 수집
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+                  labels:
+                    application: 'prometheus'
+                    environment: 'production'
+              metrics_path: '/metrics'
+              scrape_interval: 15s
+
+            # Grafana 메트릭 수집 (선택사항)
+            - job_name: 'grafana'
+              static_configs:
+                - targets: ['grafana:3000']
+                  labels:
+                    application: 'grafana'
+                    environment: 'production'
+              metrics_path: '/metrics'
+              scrape_interval: 30s
+          EOF
+          
+          # 설정 파일을 base64로 인코딩하여 출력
+          echo "prometheus-config=$(base64 -w 0 prometheus-server.prod.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate Docker Compose configuration
+        id: docker-compose-config
+        run: |
+          cat > docker-compose.prod.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            # Prometheus (메트릭 수집)
+            prometheus:
+              image: prom/prometheus:latest
+              container_name: auction-prometheus-prod
+              restart: unless-stopped
+              ports:
+                - "9090:9090"
+              volumes:
+                - ./prometheus-server.prod.yml:/etc/prometheus/prometheus.yml
+                - ./hikaricp_alerts.yml:/etc/prometheus/hikaricp_alerts.yml
+                - prometheus_data:/prometheus
+              command:
+                - '--config.file=/etc/prometheus/prometheus.yml'
+                - '--storage.tsdb.path=/prometheus'
+                - '--web.console.libraries=/etc/prometheus/console_libraries'
+                - '--web.console.templates=/etc/prometheus/consoles'
+                - '--storage.tsdb.retention.time=${{ secrets.PROMETHEUS_RETENTION_DAYS }}d'
+                - '--web.enable-lifecycle'
+              networks:
+                - monitoring-network
+              healthcheck:
+                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+
+            # Grafana (시각화)
+            grafana:
+              image: grafana/grafana:latest
+              container_name: auction-grafana-prod
+              restart: unless-stopped
+              ports:
+                - "3001:3000"
+              environment:
+                - GF_SECURITY_ADMIN_USER=admin
+                - GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+                - GF_USERS_ALLOW_SIGN_UP=false
+                - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+                - GF_SERVER_DOMAIN=bidflow.cloud
+                - GF_SERVER_ROOT_URL=https://bidflow.cloud/grafana
+              volumes:
+                - ./grafana/provisioning:/etc/grafana/provisioning
+                - grafana_data:/var/lib/grafana
+              networks:
+                - monitoring-network
+              depends_on:
+                - prometheus
+              healthcheck:
+                test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+
+          volumes:
+            prometheus_data:
+              driver: local
+            grafana_data:
+              driver: local
+
+          networks:
+            monitoring-network:
+              driver: bridge
+          EOF
+          
+          # 설정 파일을 base64로 인코딩하여 출력
+          echo "docker-compose-config=$(base64 -w 0 docker-compose.prod.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate HikariCP alerts configuration
+        id: hikaricp-alerts
+        run: |
+          cat > hikaricp_alerts.yml << 'EOF'
+          groups:
+            - name: hikaricp_alerts
+              rules:
+                # 높은 커넥션 풀 사용률 경고
+                - alert: HighHikariCPPoolUsage
+                  expr: (hikaricp_connections_active / hikaricp_connections_max) * 100 > 80
+                  for: 1m
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "높은 HikariCP 커넥션 풀 사용률"
+                    description: "HikariCP 커넥션 풀 사용률이 80%를 초과했습니다. 현재 사용률: {{ $value }}%"
+
+                # 심각한 커넥션 풀 사용률
+                - alert: CriticalHikariCPPoolUsage
+                  expr: (hikaricp_connections_active / hikaricp_connections_max) * 100 > 95
+                  for: 30s
+                  labels:
+                    severity: critical
+                    application: auction-service
+                  annotations:
+                    summary: "심각한 HikariCP 커넥션 풀 사용률"
+                    description: "HikariCP 커넥션 풀 사용률이 95%를 초과했습니다. 현재 사용률: {{ $value }}%"
+
+                # 커넥션 획득 타임아웃
+                - alert: HikariCPConnectionAcquireTimeout
+                  expr: hikaricp_connections_acquire_seconds > 1
+                  for: 1m
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "HikariCP 커넥션 획득 타임아웃"
+                    description: "커넥션 획득 시간이 1초를 초과했습니다. 현재 시간: {{ $value }}초"
+
+                # 대기 중인 스레드 발생
+                - alert: HikariCPPendingThreads
+                  expr: hikaricp_connections_pending > 0
+                  for: 30s
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "HikariCP 대기 스레드 발생"
+                    description: "사용 가능한 커넥션이 없어 대기 중인 스레드가 있습니다. 대기 스레드 수: {{ $value }}"
+
+                # 유휴 커넥션 부족
+                - alert: LowHikariCPIdleConnections
+                  expr: hikaricp_connections_idle < 2
+                  for: 2m
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "HikariCP 유휴 커넥션 부족"
+                    description: "유휴 커넥션이 2개 미만입니다. 현재 유휴 커넥션: {{ $value }}개"
+          EOF
+          
+          # 설정 파일을 base64로 인코딩하여 출력
+          echo "hikaricp-alerts-config=$(base64 -w 0 hikaricp_alerts.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate Grafana datasource configuration
+        id: grafana-datasource
+        run: |
+          mkdir -p grafana/provisioning/datasources
+          cat > grafana/provisioning/datasources/prometheus-datasource.yml << 'EOF'
+          apiVersion: 1
+
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: http://prometheus:9090
+              jsonData:
+                httpMethod: POST
+                manageAlerts: true
+                prometheusType: Prometheus
+                prometheusVersion: 3.3.0
+                cacheLevel: 'High'
+                allowAsRecordingRulesTarget: true
+                timeInterval: 10s
+                incrementalQueryOverlapWindow: 10m
+              editable: true
+              readOnly: false
+          EOF
+          
+          # 설정 파일을 base64로 인코딩하여 출력
+          echo "grafana-datasource-config=$(base64 -w 0 grafana/provisioning/datasources/prometheus-datasource.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate Grafana dashboard configuration
+        id: grafana-dashboard
+        run: |
+          mkdir -p grafana/provisioning/dashboards
+          cat > grafana/provisioning/dashboards/dashboard.yml << 'EOF'
+          apiVersion: 1
+
+          providers:
+            - name: 'HikariCP Dashboards'
+              folder: 'HikariCP Monitoring'
+              type: file
+              options:
+                path: /etc/grafana/provisioning/dashboards
+              disableDeletion: false
+              editable: true
+              updateIntervalSeconds: 30
+          EOF
+          
+          # 설정 파일을 base64로 인코딩하여 출력
+          echo "grafana-dashboard-config=$(base64 -w 0 grafana/provisioning/dashboards/dashboard.yml)" >> $GITHUB_OUTPUT
+
+      - name: Deploy monitoring stack to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.MONITORING_EC2_HOST }}
+          username: ${{ secrets.MONITORING_EC2_USER }}
+          key: ${{ secrets.MONITORING_EC2_SSH_KEY }}
+          port: 22
+          script: |
+            # 1. Docker 설치 확인 및 설치
+            if ! command -v docker &> /dev/null; then
+              echo "Installing Docker..."
+              sudo apt-get update
+              sudo apt-get install -y docker.io docker-compose curl wget
+              sudo usermod -aG docker ubuntu
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+            
+            # 2. 작업 디렉토리 생성
+            sudo mkdir -p /opt/monitoring
+            cd /opt/monitoring
+            
+            # 3. 설정 파일 생성
+            echo '${{ steps.prometheus-config.outputs.prometheus-config }}' | base64 -d > prometheus-server.prod.yml
+            echo '${{ steps.docker-compose-config.outputs.docker-compose-config }}' | base64 -d > docker-compose.prod.yml
+            echo '${{ steps.hikaricp-alerts.outputs.hikaricp-alerts-config }}' | base64 -d > hikaricp_alerts.yml
+            
+            # 4. Grafana 설정 디렉토리 생성
+            sudo mkdir -p grafana/provisioning/datasources grafana/provisioning/dashboards
+            
+            # 5. Grafana 설정 파일 생성
+            echo '${{ steps.grafana-datasource.outputs.grafana-datasource-config }}' | base64 -d > grafana/provisioning/datasources/prometheus-datasource.yml
+            echo '${{ steps.grafana-dashboard.outputs.grafana-dashboard-config }}' | base64 -d > grafana/provisioning/dashboards/dashboard.yml
+            
+            # 6. 파일 권한 설정
+            sudo chown -R ubuntu:ubuntu /opt/monitoring
+            chmod 644 prometheus-server.prod.yml docker-compose.prod.yml hikaricp_alerts.yml
+            chmod -R 644 grafana/
+            
+            # 7. 기존 컨테이너 정리
+            echo "Cleaning up existing containers..."
+            sudo docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+            sudo docker system prune -f || true
+            
+            # 8. 모니터링 스택 시작
+            echo "Starting monitoring stack..."
+            sudo docker-compose -f docker-compose.prod.yml up -d
+            
+            # 9. 서비스 상태 확인
+            echo "Waiting for services to start..."
+            sleep 15
+            
+            # Prometheus 상태 확인
+            if curl -f http://localhost:9090/-/healthy >/dev/null 2>&1; then
+              echo "✅ Prometheus is running"
+            else
+              echo "❌ Prometheus failed to start"
+              sudo docker-compose -f docker-compose.prod.yml logs prometheus
+              exit 1
+            fi
+            
+            # Grafana 상태 확인
+            if curl -f http://localhost:3001/api/health >/dev/null 2>&1; then
+              echo "✅ Grafana is running"
+            else
+              echo "❌ Grafana failed to start"
+              sudo docker-compose -f docker-compose.prod.yml logs grafana
+              exit 1
+            fi
+            
+            # 10. Spring Boot 애플리케이션 메트릭 확인
+            echo "Checking Spring Boot application metrics..."
+            if curl -f http://${{ secrets.EC2_HOST }}:8080/actuator/prometheus >/dev/null 2>&1; then
+              echo "✅ Spring Boot metrics are accessible"
+            else
+              echo "⚠️ Spring Boot application is not running or metrics not exposed"
+              echo "Please ensure the Spring Boot application is running on ${{ secrets.EC2_HOST }}:8080"
+            fi
+            
+            # 11. 방화벽 설정 (선택사항)
+            echo "Configuring firewall..."
+            sudo ufw allow 22/tcp || true
+            sudo ufw allow from ${{ secrets.EC2_HOST }} to any port 9090 || true
+            sudo ufw allow from ${{ secrets.EC2_HOST }} to any port 3001 || true
+            sudo ufw --force enable || true
+            
+            echo "🎉 Monitoring stack deployment completed!"
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying monitoring deployment..."
+          
+          # Prometheus 접근 확인
+          if curl -f http://${{ secrets.MONITORING_EC2_HOST }}:9090/-/healthy >/dev/null 2>&1; then
+            echo "✅ Prometheus is accessible at http://${{ secrets.MONITORING_EC2_HOST }}:9090"
+          else
+            echo "❌ Prometheus is not accessible"
+            exit 1
+          fi
+          
+          # Grafana 접근 확인
+          if curl -f http://${{ secrets.MONITORING_EC2_HOST }}:3001/api/health >/dev/null 2>&1; then
+            echo "✅ Grafana is accessible at http://${{ secrets.MONITORING_EC2_HOST }}:3001"
+          else
+            echo "❌ Grafana is not accessible"
+            exit 1
+          fi
+          
+          echo ""
+          echo "🎉 Monitoring deployment verification completed!"
+          echo ""
+          echo "📊 Access Information:"
+          echo "  - Prometheus: http://${{ secrets.MONITORING_EC2_HOST }}:9090"
+          echo "  - Grafana: http://${{ secrets.MONITORING_EC2_HOST }}:3001"
+          echo "  - Grafana Login: admin / [configured password]"
+          echo ""
+          echo "🔧 Management Commands:"
+          echo "  - Check status: ssh ${{ secrets.MONITORING_EC2_USER }}@${{ secrets.MONITORING_EC2_HOST }} 'cd /opt/monitoring && sudo docker-compose -f docker-compose.prod.yml ps'"
+          echo "  - View logs: ssh ${{ secrets.MONITORING_EC2_USER }}@${{ secrets.MONITORING_EC2_HOST }} 'cd /opt/monitoring && sudo docker-compose -f docker-compose.prod.yml logs -f'"
+          echo "  - Restart services: ssh ${{ secrets.MONITORING_EC2_USER }}@${{ secrets.MONITORING_EC2_HOST }} 'cd /opt/monitoring && sudo docker-compose -f docker-compose.prod.yml restart'"
+          echo ""
+          echo "⚠️ Security Notes:"
+          echo "  1. Grafana password is set via GRAFANA_ADMIN_PASSWORD secret"
+          echo "  2. Firewall is configured to allow access only from Spring Boot server"
+          echo "  3. Consider setting up ALB for HTTPS access"
+
+      - name: Deployment Summary
+        run: |
+          echo "🎯 Deployment Summary"
+          echo "===================="
+          echo "✅ Monitoring stack deployed successfully"
+          echo "📊 Prometheus: http://${{ secrets.MONITORING_EC2_HOST }}:9090"
+          echo "📈 Grafana: http://${{ secrets.MONITORING_EC2_HOST }}:3001"
+          echo "🔍 Monitoring: ${{ secrets.EC2_HOST }}:8080/actuator/prometheus"
+          echo "👤 Deployed by: ${{ github.actor }}"
+          echo "📝 Reason: ${{ github.event.inputs.reason }}"
+          echo "🕐 Deployed at: $(date -u)"
