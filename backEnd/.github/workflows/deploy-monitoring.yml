@@ -67,6 +67,8 @@ jobs:
       id: docker-compose-config
       run: |
         cat > docker-compose.prod.yml << 'EOF'
+        version: '3.8'
+        
         services:
           # Prometheus (메트릭 수집)
           prometheus:
@@ -94,7 +96,7 @@ jobs:
               timeout: 10s
               retries: 3
           
-          # Grafana (대시보드)
+          # Grafana (대시보드) - 도메인 설정 제거
           grafana:
             image: grafana/grafana:latest
             container_name: auction-grafana-prod
@@ -106,6 +108,9 @@ jobs:
               - GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
               - GF_USERS_ALLOW_SIGN_UP=false
               - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+              # 도메인 설정 제거 - IP 기반 접근으로 변경
+              # - GF_SERVER_DOMAIN=bidflow.cloud
+              # - GF_SERVER_ROOT_URL=https://bidflow.cloud/grafana
             volumes:
               - ./grafana/provisioning:/etc/grafana/provisioning
               - grafana_data:/var/lib/grafana
@@ -129,7 +134,7 @@ jobs:
           monitoring-network:
             driver: bridge
         EOF
-        echo "docker-compose=$(base64 -w 0 docker-compose.prod.yml)" >> $GITHUB_OUTPUT
+        echo "docker-compose-config=$(base64 -w 0 docker-compose.prod.yml)" >> $GITHUB_OUTPUT
 
     - name: Generate HikariCP alerts
       id: hikaricp-alerts
@@ -845,12 +850,11 @@ jobs:
           
           # 4. 설정 파일 생성 (base64 디코딩)
           echo '${{ steps.prometheus-config.outputs.prometheus-config }}' | base64 -d > prometheus-server.prod.yml
-          echo '${{ steps.docker-compose.outputs.docker-compose }}' | base64 -d > docker-compose.prod.yml
+          echo '${{ steps.docker-compose-config.outputs.docker-compose-config }}' | base64 -d > docker-compose.prod.yml
           echo '${{ steps.hikaricp-alerts.outputs.hikaricp-alerts }}' | base64 -d > hikaricp_alerts.yml
           
-          # 5. Grafana 설정 디렉토리 생성 및 권한 설정
+          # 5. Grafana 설정 디렉토리 생성
           sudo mkdir -p grafana/provisioning/datasources grafana/provisioning/dashboards
-          sudo chown -R $USER:$USER grafana/
           
           # 6. Grafana 설정 파일 생성
           echo '${{ steps.grafana-datasource.outputs.grafana-datasource }}' | base64 -d > grafana/provisioning/datasources/prometheus-datasource.yml
@@ -859,20 +863,17 @@ jobs:
           # 7. HikariCP 대시보드 JSON 파일 생성
           echo '${{ steps.hikaricp-dashboard-json.outputs.hikaricp-dashboard-json }}' | base64 -d > grafana/provisioning/dashboards/hikaricp-dashboard.json
           
-          # 8. 전체 디렉토리 권한 설정
+          # 8. 파일 권한 설정
           sudo chown -R $USER:$USER /opt/monitoring
           chmod 644 prometheus-server.prod.yml docker-compose.prod.yml hikaricp_alerts.yml
           chmod -R 644 grafana/
           
-          # 9. 기존 컨테이너 정리 (강제 삭제)
+          # 9. 기존 컨테이너 정리
           echo "Cleaning up existing containers..."
           sudo docker-compose -f docker-compose.prod.yml down --remove-orphans || true
-          sudo docker rm -f auction-grafana-prod auction-prometheus-prod || true
           sudo docker system prune -f || true
           
-          # 10. Docker 네트워크 생성 및 모니터링 스택 시작
-          echo "Creating Docker network..."
-          sudo docker network create monitoring-network || true
+          # 10. 모니터링 스택 시작
           echo "Starting monitoring stack..."
           sudo docker-compose -f docker-compose.prod.yml up -d
           

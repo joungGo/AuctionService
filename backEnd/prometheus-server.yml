@@ -17,11 +17,11 @@ scrape_configs:
   - job_name: 'spring-boot-app'
     # 정적 타겟 설정 - 수집할 서버 목록
     static_configs:
-      - targets: ['host.docker.internal:8080']
-        # 타겟에 대한 라벨 설정 (선택사항)
+      - targets: ['13.125.44.217:8080']
+        # 타겟에 대한 라벨 설정 (운영환경)
         labels:
           application: 'auction-service'
-          environment: 'development'
+          environment: 'production'
     # 메트릭 엔드포인트 경로
     metrics_path: '/actuator/prometheus'
     # 이 작업의 스크랩 간격 (매우 자주 수집하여 Active Connections 포착)
