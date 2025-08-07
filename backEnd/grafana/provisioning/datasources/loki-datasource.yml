@@ -1,0 +1,35 @@
+apiVersion: 1
+
+# Grafana Loki 데이터 소스 설정
+# Spring Boot 애플리케이션의 로그를 수집하기 위한 설정
+
+datasources:
+  # Loki 데이터 소스 설정
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    # JSON 데이터 설정
+    jsonData:
+      # HTTP 메서드 설정
+      httpMethod: POST
+      # Loki 타입 설정
+      lokiType: Loki
+      # Loki 버전 설정
+      lokiVersion: 2.9.0
+      # 캐시 레벨 설정
+      cacheLevel: 'High'
+      # 시간 간격 설정 (10초)
+      timeInterval: 10s
+      # 증분 쿼리 중복 윈도우 설정
+      incrementalQueryOverlapWindow: 10m
+      # 로그 라벨 설정
+      derivedFields:
+        - datasourceUid: prometheus
+          matcherRegex: "traceID=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"
+    # 편집 가능 여부
+    editable: true
+    # 읽기 전용 여부
+    readOnly: false
