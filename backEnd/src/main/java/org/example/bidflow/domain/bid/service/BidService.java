@@ -251,14 +251,28 @@ public class BidService {
 
     // 경매 시간 유효성 검증
     private void validateAuctionTime(LocalDateTime now,  Auction auction) {
-        if(now.isBefore(auction.getStartTime())){
-            log.warn("[입찰 검증 실패] 경매 시작 전 입찰 시도 - 경매ID: {}, 현재시간: {}, 시작시간: {}", 
-                    auction.getAuctionId(), now, auction.getStartTime());
+        // 경매 상태를 우선적으로 확인
+        if (auction.getStatus() == AuctionStatus.UPCOMING) {
+            log.warn("[입찰 검증 실패] 경매 시작 전 입찰 시도 - 경매ID: {}, 현재상태: {}, 시작시간: {}",
+                    auction.getAuctionId(), auction.getStatus(), auction.getStartTime());
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 시작 전입니다.");
-        }else if(now.isAfter(auction.getEndTime())){
-            log.warn("[입찰 검증 실패] 경매 종료 후 입찰 시도 - 경매ID: {}, 현재시간: {}, 종료시간: {}", 
-                    auction.getAuctionId(), now, auction.getEndTime());
+        } else if (auction.getStatus() == AuctionStatus.FINISHED) {
+            log.warn("[입찰 검증 실패] 경매 종료 후 입찰 시도 - 경매ID: {}, 현재상태: {}, 종료시간: {}",
+                    auction.getAuctionId(), auction.getStatus(), auction.getEndTime());
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 종료 되었습니다.");
+        }
+
+        // 경매 상태가 ONGOING인 경우에만 시간 검증 수행
+        if (auction.getStatus() == AuctionStatus.ONGOING) {
+            if(now.isBefore(auction.getStartTime())){
+                log.warn("[입찰 검증 실패] 경매 시작 전 입찰 시도 - 경매ID: {}, 현재시간: {}, 시작시간: {}, 상태: {}",
+                        auction.getAuctionId(), now, auction.getStartTime(), auction.getStatus());
+                throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 시작 전입니다.");
+            }else if(now.isAfter(auction.getEndTime())){
+                log.warn("[입찰 검증 실패] 경매 종료 후 입찰 시도 - 경매ID: {}, 현재시간: {}, 종료시간: {}, 상태: {}",
+                        auction.getAuctionId(), now, auction.getEndTime(), auction.getStatus());
+                throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 종료 되었습니다.");
+            }
         }
     }
 

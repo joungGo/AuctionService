@@ -1,0 +1,21 @@
+apiVersion: 1
+
+# Grafana 대시보드 프로비저닝 설정
+# HikariCP 커넥션 풀 모니터링 대시보드를 자동으로 로드하는 설정
+
+providers:
+  # 대시보드 프로바이더 설정
+  - name: 'HikariCP Dashboards'
+    # 대시보드 파일 경로
+    folder: 'HikariCP Monitoring'
+    # 대시보드 파일 확장자
+    type: file
+    # 대시보드 파일 위치
+    options:
+      path: /etc/grafana/provisioning/dashboards
+    # 대시보드 삭제 허용
+    disableDeletion: false
+    # 대시보드 편집 허용
+    editable: true
+    # 대시보드 업데이트 허용
+    updateIntervalSeconds: 30 

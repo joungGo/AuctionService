@@ -1,0 +1,42 @@
+# Prometheus 설정 파일
+# Spring Boot Actuator + Micrometer를 통해 노출된 메트릭을 수집하는 설정
+
+global:
+  # 전역 스크랩 간격 (5초마다 메트릭 수집) - 더 자주 수집
+  scrape_interval: 5s
+  # 규칙 평가 간격 (5초마다 알림 규칙 평가)
+  evaluation_interval: 5s
+
+# 알림 규칙 파일 경로
+rule_files:
+  - "hikaricp_alerts.yml"
+
+# 스크랩 설정 - 수집할 타겟들을 정의
+scrape_configs:
+  # Spring Boot 애플리케이션 메트릭 수집 작업
+  - job_name: 'spring-boot-app'
+    # 정적 타겟 설정 - 수집할 서버 목록
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        # 타겟에 대한 라벨 설정 (선택사항)
+        labels:
+          application: 'auction-service'
+          environment: 'development'
+    # 메트릭 엔드포인트 경로
+    metrics_path: '/actuator/prometheus'
+    # 이 작업의 스크랩 간격 (매우 자주 수집하여 Active Connections 포착)
+    scrape_interval: 2s
+    # 스크랩 타임아웃 설정 (더 짧게 설정)
+    scrape_timeout: 2s
+    # HTTP 요청 헤더 설정 (필요시)
+    # headers:
+    #   Authorization: 'Bearer your-token'
+
+  # Prometheus 자체 메트릭 수집 (선택사항)
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    # Prometheus 자체 메트릭 경로
+    metrics_path: '/metrics'
+    # 글로벌 설정과 동일한 간격 사용
+    scrape_interval: 5s 

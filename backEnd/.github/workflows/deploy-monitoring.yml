@@ -1,0 +1,940 @@
+name: Monitoring Deploy To AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Deployment reason'
+        required: true
+        default: 'Monitoring deployment'
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Generate Prometheus configuration
+      id: prometheus-config
+      run: |
+        cat > prometheus-server.prod.yml << 'EOF'
+        # Prometheus 운영환경 설정 파일
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+        
+        rule_files:
+          - "hikaricp_alerts.yml"
+        
+        scrape_configs:
+          # Spring Boot 애플리케이션 메트릭 수집
+          - job_name: 'auction-service-prod'
+            static_configs:
+              - targets: ['${{ secrets.EC2_HOST }}:8080']
+                labels:
+                  application: 'auction-service'
+                  environment: 'production'
+                  instance: 'ec2-auction-service'
+            metrics_path: '/actuator/prometheus'
+            scrape_interval: 15s
+            scrape_timeout: 10s
+          
+          # Prometheus 자체 메트릭 수집
+          - job_name: 'prometheus'
+            static_configs:
+              - targets: ['localhost:9090']
+                labels:
+                  application: 'prometheus'
+                  environment: 'production'
+            metrics_path: '/metrics'
+            scrape_interval: 15s
+          
+          # Grafana 메트릭 수집 (선택사항)
+          - job_name: 'grafana'
+            static_configs:
+              - targets: ['grafana:3000']
+                labels:
+                  application: 'grafana'
+                  environment: 'production'
+            metrics_path: '/metrics'
+            scrape_interval: 30s
+        EOF
+        echo "prometheus-config=$(base64 -w 0 prometheus-server.prod.yml)" >> $GITHUB_OUTPUT
+
+    - name: Generate Docker Compose configuration
+      id: docker-compose-config
+      run: |
+        cat > docker-compose.prod.yml << 'EOF'
+        version: '3.8'
+        
+        services:
+          # Prometheus (메트릭 수집)
+          prometheus:
+            image: prom/prometheus:latest
+            container_name: auction-prometheus-prod
+            restart: unless-stopped
+            ports:
+              - "9090:9090"
+            volumes:
+              - ./prometheus-server.prod.yml:/etc/prometheus/prometheus.yml
+              - ./hikaricp_alerts.yml:/etc/prometheus/hikaricp_alerts.yml
+              - prometheus_data:/prometheus
+            command:
+              - '--config.file=/etc/prometheus/prometheus.yml'
+              - '--storage.tsdb.path=/prometheus'
+              - '--web.console.libraries=/etc/prometheus/console_libraries'
+              - '--web.console.templates=/etc/prometheus/consoles'
+              - '--storage.tsdb.retention.time=${{ secrets.PROMETHEUS_RETENTION_DAYS }}d'
+              - '--web.enable-lifecycle'
+            networks:
+              - monitoring-network
+            healthcheck:
+              test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+          
+          # Grafana (대시보드) - 도메인 설정 제거
+          grafana:
+            image: grafana/grafana:latest
+            container_name: auction-grafana-prod
+            restart: unless-stopped
+            ports:
+              - "3001:3000"
+            environment:
+              - GF_SECURITY_ADMIN_USER=admin
+              - GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+              - GF_USERS_ALLOW_SIGN_UP=false
+              - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+              # 도메인 설정 제거 - IP 기반 접근으로 변경
+              # - GF_SERVER_DOMAIN=bidflow.cloud
+              # - GF_SERVER_ROOT_URL=https://bidflow.cloud/grafana
+            volumes:
+              - ./grafana/provisioning:/etc/grafana/provisioning
+              - grafana_data:/var/lib/grafana
+            networks:
+              - monitoring-network
+            depends_on:
+              - prometheus
+            healthcheck:
+              test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+        
+        volumes:
+          prometheus_data:
+            driver: local
+          grafana_data:
+            driver: local
+        
+        networks:
+          monitoring-network:
+            driver: bridge
+        EOF
+        echo "docker-compose-config=$(base64 -w 0 docker-compose.prod.yml)" >> $GITHUB_OUTPUT
+
+    - name: Generate HikariCP alerts
+      id: hikaricp-alerts
+      run: |
+        cat > hikaricp_alerts.yml << 'EOF'
+        groups:
+          - name: hikaricp_alerts
+            rules:
+              # 높은 커넥션 풀 사용률 경고
+              - alert: HighHikariCPPoolUsage
+                expr: (hikaricp_connections_active / hikaricp_connections_max) * 100 > 80
+                for: 1m
+                labels:
+                  severity: warning
+                  application: auction-service
+                annotations:
+                  summary: "높은 HikariCP 커넥션 풀 사용률"
+                  description: "HikariCP 커넥션 풀 사용률이 80%를 초과했습니다. 현재 사용률: {{ $value }}%"
+              
+              # 크리티컬 커넥션 풀 사용률
+              - alert: CriticalHikariCPPoolUsage
+                expr: (hikaricp_connections_active / hikaricp_connections_max) * 100 > 95
+                for: 30s
+                labels:
+                  severity: critical
+                  application: auction-service
+                annotations:
+                  summary: "크리티컬 HikariCP 커넥션 풀 사용률"
+                  description: "HikariCP 커넥션 풀 사용률이 95%를 초과했습니다. 현재 사용률: {{ $value }}%"
+              
+              # 커넥션 획득 타임아웃
+              - alert: HikariCPConnectionAcquireTimeout
+                expr: hikaricp_connections_acquire_seconds > 1
+                for: 1m
+                labels:
+                  severity: warning
+                  application: auction-service
+                annotations:
+                  summary: "HikariCP 커넥션 획득 타임아웃"
+                  description: "커넥션 획득 시간이 1초를 초과했습니다. 획득 시간: {{ $value }}초"
+              
+              # 대기 중인 스레드 큐
+              - alert: HikariCPPendingThreads
+                expr: hikaricp_connections_pending > 0
+                for: 30s
+                labels:
+                  severity: warning
+                  application: auction-service
+                annotations:
+                  summary: "HikariCP 대기 중인 스레드 큐"
+                  description: "커넥션 풀에서 대기 중인 스레드가 있습니다. 대기 중인 스레드: {{ $value }}"
+              
+              # 낮은 유휴 커넥션
+              - alert: LowHikariCPIdleConnections
+                expr: hikaricp_connections_idle < 2
+                for: 2m
+                labels:
+                  severity: warning
+                  application: auction-service
+                annotations:
+                  summary: "HikariCP 낮은 유휴 커넥션"
+                  description: "유휴 커넥션이 2개 미만입니다. 현재 유휴 커넥션: {{ $value }}개"
+        EOF
+        echo "hikaricp-alerts=$(base64 -w 0 hikaricp_alerts.yml)" >> $GITHUB_OUTPUT
+
+    - name: Generate Grafana datasource configuration
+      id: grafana-datasource
+      run: |
+        cat > grafana-datasource.yml << 'EOF'
+        apiVersion: 1
+        
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus:9090
+            jsonData:
+              httpMethod: POST
+              manageAlerts: true
+              prometheusType: Prometheus
+              prometheusVersion: 3.3.0
+              cacheLevel: 'High'
+              allowAsRecordRecordingRulesTarget: true
+              timeInterval: 10s
+              incrementalQueryOverlapWindow: 10m
+            editable: true
+          readOnly: false
+        EOF
+        echo "grafana-datasource=$(base64 -w 0 grafana-datasource.yml)" >> $GITHUB_OUTPUT
+
+    - name: Generate Grafana dashboard configuration
+      id: grafana-dashboard
+      run: |
+        cat > grafana-dashboard.yml << 'EOF'
+        apiVersion: 1
+        
+        providers:
+          - name: 'HikariCP Dashboards'
+            folder: 'HikariCP Monitoring'
+            type: file
+            options:
+              path: /etc/grafana/provisioning/dashboards
+            disableDeletion: false
+            editable: true
+            updateIntervalSeconds: 30
+        EOF
+        echo "grafana-dashboard=$(base64 -w 0 grafana-dashboard.yml)" >> $GITHUB_OUTPUT
+
+    - name: Generate HikariCP dashboard JSON
+      id: hikaricp-dashboard-json
+      run: |
+        cat > hikaricp-dashboard.json << 'EOF'
+        {
+          "annotations": {
+            "list": [
+              {
+                "builtIn": 1,
+                "datasource": {
+                  "type": "grafana",
+                  "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+              }
+            ]
+          },
+          "editable": true,
+          "fiscalYearStartMonth": 0,
+          "graphTooltip": 0,
+          "id": null,
+          "links": [],
+          "liveNow": false,
+          "panels": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "vis": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "percent"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+              },
+              "id": 1,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                  },
+                  "expr": "(hikaricp_connections_active / hikaricp_connections_max) * 100",
+                  "refId": "A"
+                }
+              ],
+              "title": "Connection Pool Usage (%)",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "vis": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 0
+              },
+              "id": 2,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                  },
+                  "expr": "hikaricp_connections_active",
+                  "refId": "A"
+                }
+              ],
+              "title": "Active Connections",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "vis": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 8
+              },
+              "id": 3,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                  },
+                  "expr": "hikaricp_connections_idle",
+                  "refId": "A"
+                }
+              ],
+              "title": "Idle Connections",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "vis": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 8
+              },
+              "id": 4,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                  },
+                  "expr": "hikaricp_connections_max",
+                  "refId": "A"
+                }
+              ],
+              "title": "Max Connections",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "vis": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "s"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 16
+              },
+              "id": 5,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                  },
+                  "expr": "hikaricp_connections_acquire_seconds",
+                  "refId": "A"
+                }
+              ],
+              "title": "Connection Acquire Time (seconds)",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "vis": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+              },
+              "id": 6,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                  },
+                  "expr": "hikaricp_connections_pending",
+                  "refId": "A"
+                }
+              ],
+              "title": "Pending Threads",
+              "type": "timeseries"
+            }
+          ],
+          "refresh": "15s",
+          "schemaVersion": 38,
+          "style": "dark",
+          "tags": [
+            "hikaricp",
+            "database",
+            "monitoring"
+          ],
+          "templating": {
+            "list": []
+          },
+          "time": {
+            "from": "now-1h",
+            "to": "now"
+          },
+          "timepicker": {},
+          "timezone": "",
+          "title": "HikariCP Connection Pool Monitoring",
+          "uid": "hikaricp-connection-pool",
+          "version": 1,
+          "weekStart": ""
+        }
+        EOF
+        echo "hikaricp-dashboard-json=$(base64 -w 0 hikaricp-dashboard.json)" >> $GITHUB_OUTPUT
+
+    - name: Deploy monitoring stack to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.MONITORING_EC2_HOST }}
+        username: ${{ secrets.MONITORING_EC2_USER }}
+        key: ${{ secrets.MONITORING_EC2_SSH_KEY }}
+        port: 22
+        script: |
+          # 1. Docker 설치 확인 및 설치
+          if ! command -v docker &> /dev/null; then
+            echo "Installing Docker..."
+            sudo apt-get update
+            sudo apt-get install -y docker.io curl wget
+            sudo usermod -aG docker $USER
+            sudo systemctl enable docker
+            sudo systemctl start docker
+          fi
+          
+          # 2. Docker Compose 설치 확인 및 설치
+          if ! command -v docker-compose &> /dev/null; then
+            echo "Installing Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+          fi
+          
+          # 3. 작업 디렉토리 생성
+          sudo mkdir -p /opt/monitoring
+          cd /opt/monitoring
+          
+          # 4. 설정 파일 생성 (base64 디코딩)
+          echo '${{ steps.prometheus-config.outputs.prometheus-config }}' | base64 -d > prometheus-server.prod.yml
+          echo '${{ steps.docker-compose-config.outputs.docker-compose-config }}' | base64 -d > docker-compose.prod.yml
+          echo '${{ steps.hikaricp-alerts.outputs.hikaricp-alerts }}' | base64 -d > hikaricp_alerts.yml
+          
+          # 5. Grafana 설정 디렉토리 생성
+          sudo mkdir -p grafana/provisioning/datasources grafana/provisioning/dashboards
+          
+          # 6. Grafana 설정 파일 생성
+          echo '${{ steps.grafana-datasource.outputs.grafana-datasource }}' | base64 -d > grafana/provisioning/datasources/prometheus-datasource.yml
+          echo '${{ steps.grafana-dashboard.outputs.grafana-dashboard }}' | base64 -d > grafana/provisioning/dashboards/dashboard.yml
+          
+          # 7. HikariCP 대시보드 JSON 파일 생성
+          echo '${{ steps.hikaricp-dashboard-json.outputs.hikaricp-dashboard-json }}' | base64 -d > grafana/provisioning/dashboards/hikaricp-dashboard.json
+          
+          # 8. 파일 권한 설정
+          sudo chown -R $USER:$USER /opt/monitoring
+          chmod 644 prometheus-server.prod.yml docker-compose.prod.yml hikaricp_alerts.yml
+          chmod -R 644 grafana/
+          
+          # 9. 기존 컨테이너 정리
+          echo "Cleaning up existing containers..."
+          sudo docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+          sudo docker system prune -f || true
+          
+          # 10. 모니터링 스택 시작
+          echo "Starting monitoring stack..."
+          sudo docker-compose -f docker-compose.prod.yml up -d
+          
+          # 11. 서비스 상태 확인
+          echo "Waiting for services to start..."
+          sleep 15
+          
+          # Prometheus 상태 확인
+          if curl -f http://localhost:9090/-/healthy >/dev/null 2>&1; then
+            echo "✅ Prometheus is running"
+          else
+            echo "❌ Prometheus failed to start"
+            sudo docker-compose -f docker-compose.prod.yml logs prometheus
+            exit 1
+          fi
+          
+          # Grafana 상태 확인
+          if curl -f http://localhost:3001/api/health >/dev/null 2>&1; then
+            echo "✅ Grafana is running"
+          else
+            echo "❌ Grafana failed to start"
+            sudo docker-compose -f docker-compose.prod.yml logs grafana
+            exit 1
+          fi
+          
+          # 12. Spring Boot 애플리케이션 메트릭 확인
+          echo "Checking Spring Boot application metrics..."
+          if curl -f http://${{ secrets.EC2_HOST }}:8080/actuator/prometheus >/dev/null 2>&1; then
+            echo "✅ Spring Boot metrics are accessible"
+          else
+            echo "⚠️ Spring Boot application is not running or metrics not exposed"
+            echo "Please ensure the Spring Boot application is running on ${{ secrets.EC2_HOST }}:8080"
+          fi
+          
+          # 13. 방화벽 설정 (선택사항)
+          echo "Configuring firewall..."
+          sudo ufw allow 22/tcp || true
+          sudo ufw allow from ${{ secrets.EC2_HOST }} to any port 9090 || true
+          sudo ufw allow from ${{ secrets.EC2_HOST }} to any port 3001 || true
+          sudo ufw --force enable || true
+          
+          echo "🎉 Monitoring stack deployment completed!"
+
+    - name: Verify deployment
+      run: |
+        echo "🔍 Verifying monitoring deployment..."
+        echo "Prometheus URL: http://${{ secrets.MONITORING_EC2_HOST }}:9090"
+        echo "Grafana URL: http://${{ secrets.MONITORING_EC2_HOST }}:3001"
+        echo "Grafana Admin Password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}"
+        
+        # 간단한 연결 테스트
+        echo "Testing Prometheus connection..."
+        if curl -f --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:9090/-/healthy; then
+          echo "✅ Prometheus is accessible"
+        else
+          echo "❌ Prometheus is not accessible"
+        fi
+        
+        echo "Testing Grafana connection..."
+        if curl -f --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:3001/api/health; then
+          echo "✅ Grafana is accessible"
+        else
+          echo "❌ Grafana is not accessible"
+        fi
