@@ -67,8 +67,6 @@ jobs:
       id: docker-compose-config
       run: |
         cat > docker-compose.prod.yml << 'EOF'
-        version: '3.8'
-        
         services:
           # Prometheus (메트릭 수집)
           prometheus:
@@ -853,8 +851,9 @@ jobs:
           echo '${{ steps.docker-compose-config.outputs.docker-compose-config }}' | base64 -d > docker-compose.prod.yml
           echo '${{ steps.hikaricp-alerts.outputs.hikaricp-alerts }}' | base64 -d > hikaricp_alerts.yml
           
-          # 5. Grafana 설정 디렉토리 생성
+          # 5. Grafana 설정 디렉토리 생성 및 권한 설정
           sudo mkdir -p grafana/provisioning/datasources grafana/provisioning/dashboards
+          sudo chown -R $USER:$USER grafana/
           
           # 6. Grafana 설정 파일 생성
           echo '${{ steps.grafana-datasource.outputs.grafana-datasource }}' | base64 -d > grafana/provisioning/datasources/prometheus-datasource.yml
@@ -863,17 +862,20 @@ jobs:
           # 7. HikariCP 대시보드 JSON 파일 생성
           echo '${{ steps.hikaricp-dashboard-json.outputs.hikaricp-dashboard-json }}' | base64 -d > grafana/provisioning/dashboards/hikaricp-dashboard.json
           
-          # 8. 파일 권한 설정
+          # 8. 전체 디렉토리 권한 설정
           sudo chown -R $USER:$USER /opt/monitoring
           chmod 644 prometheus-server.prod.yml docker-compose.prod.yml hikaricp_alerts.yml
           chmod -R 644 grafana/
           
-          # 9. 기존 컨테이너 정리
+          # 9. 기존 컨테이너 정리 (강제 삭제)
           echo "Cleaning up existing containers..."
           sudo docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+          sudo docker rm -f auction-grafana-prod auction-prometheus-prod || true
           sudo docker system prune -f || true
           
-          # 10. 모니터링 스택 시작
+          # 10. Docker 네트워크 생성 및 모니터링 스택 시작
+          echo "Creating Docker network..."
+          sudo docker network create monitoring-network || true
           echo "Starting monitoring stack..."
           sudo docker-compose -f docker-compose.prod.yml up -d
           
