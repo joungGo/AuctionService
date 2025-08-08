@@ -235,6 +235,129 @@ jobs:
             echo '${{ steps.compose.outputs.content }}' | base64 -d > docker-compose.yml
             echo '${{ steps.grafana-datasource.outputs.content }}' | base64 -d > grafana/provisioning/datasources/prometheus.yml
             echo '${{ steps.grafana-dashboard.outputs.content }}' | base64 -d > grafana/provisioning/dashboards/provider.yml
+            
+            # Create HikariCP dashboard JSON
+            cat > grafana/provisioning/dashboards/hikaricp-dashboard.json << 'EOF'
+            {
+              "dashboard": {
+                "id": null,
+                "title": "HikariCP Connection Pool Monitoring",
+                "tags": ["hikaricp", "database", "monitoring"],
+                "timezone": "",
+                "panels": [
+                  {
+                    "id": 1,
+                    "title": "Connection Pool Usage (%)",
+                    "type": "timeseries",
+                    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+                    "fieldConfig": {
+                      "defaults": {
+                        "color": {"mode": "palette-classic"},
+                        "unit": "percent",
+                        "thresholds": {
+                          "steps": [
+                            {"color": "green", "value": null},
+                            {"color": "yellow", "value": 70},
+                            {"color": "red", "value": 85}
+                          ]
+                        }
+                      }
+                    },
+                    "targets": [
+                      {
+                        "datasource": {"type": "prometheus", "uid": "prometheus"},
+                        "expr": "(hikaricp_connections_active / hikaricp_connections_max) * 100",
+                        "refId": "A"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 2,
+                    "title": "Active Connections",
+                    "type": "timeseries",
+                    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+                    "fieldConfig": {
+                      "defaults": {
+                        "color": {"mode": "palette-classic"},
+                        "unit": "short"
+                      }
+                    },
+                    "targets": [
+                      {
+                        "datasource": {"type": "prometheus", "uid": "prometheus"},
+                        "expr": "hikaricp_connections_active",
+                        "refId": "A"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 3,
+                    "title": "Idle Connections",
+                    "type": "timeseries",
+                    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+                    "fieldConfig": {
+                      "defaults": {
+                        "color": {"mode": "palette-classic"},
+                        "unit": "short"
+                      }
+                    },
+                    "targets": [
+                      {
+                        "datasource": {"type": "prometheus", "uid": "prometheus"},
+                        "expr": "hikaricp_connections_idle",
+                        "refId": "A"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 4,
+                    "title": "Max Connections",
+                    "type": "timeseries",
+                    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+                    "fieldConfig": {
+                      "defaults": {
+                        "color": {"mode": "palette-classic"},
+                        "unit": "short"
+                      }
+                    },
+                    "targets": [
+                      {
+                        "datasource": {"type": "prometheus", "uid": "prometheus"},
+                        "expr": "hikaricp_connections_max",
+                        "refId": "A"
+                      }
+                    ]
+                  }
+                ],
+                "time": {"from": "now-1h", "to": "now"},
+                "refresh": "15s",
+                "schemaVersion": 38,
+                "version": 1
+              },
+              "meta": {
+                "type": "db",
+                "canSave": true,
+                "canEdit": true,
+                "canAdmin": true,
+                "canStar": true,
+                "slug": "hikaricp-connection-pool-monitoring",
+                "url": "/d/hikaricp-connection-pool/hikaricp-connection-pool-monitoring",
+                "expires": "0001-01-01T00:00:00Z",
+                "created": "0001-01-01T00:00:00Z",
+                "updated": "0001-01-01T00:00:00Z",
+                "updatedBy": "",
+                "createdBy": "",
+                "version": 1,
+                "hasAcl": false,
+                "isFolder": false,
+                "folderId": 0,
+                "folderTitle": "General",
+                "folderUrl": "",
+                "provisioned": true,
+                "provisionedExternalId": ""
+              }
+            }
+            EOF
 
             # Move to final location with sudo
             sudo mv ~/monitoring /opt/monitoring
