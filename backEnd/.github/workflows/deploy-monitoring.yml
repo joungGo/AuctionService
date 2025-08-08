@@ -137,12 +137,13 @@ jobs:
           providers:
             - name: 'HikariCP Dashboards'
               orgId: 1
-              folder: 'HikariCP Monitoring'
+              folder: ''
               type: file
               options:
                 path: /etc/grafana/provisioning/dashboards
               disableDeletion: false
               editable: true
+              updateIntervalSeconds: 10
           EOF
           echo "content=$(base64 -w 0 grafana-dashboard.yml)" >> $GITHUB_OUTPUT
 
@@ -188,6 +189,17 @@ jobs:
                 - grafana_data:/var/lib/grafana
               depends_on:
                 - prometheus
+                - loki
+              networks:
+                - monitoring
+
+            loki:
+              image: grafana/loki:latest
+              container_name: auction-loki
+              restart: unless-stopped
+              ports:
+                - "3100:3100"
+              command: -config.file=/etc/loki/local-config.yaml
               networks:
                 - monitoring
 
@@ -225,14 +237,134 @@ jobs:
               sudo apt-get install -y docker-compose-plugin
             fi
 
-            sudo mkdir -p /opt/monitoring/grafana/provisioning/datasources /opt/monitoring/grafana/provisioning/dashboards
-            cd /opt/monitoring
+            # Create directories and files with proper permissions
+            sudo rm -rf /opt/monitoring || true
+            mkdir -p ~/monitoring/grafana/provisioning/datasources ~/monitoring/grafana/provisioning/dashboards
+            cd ~/monitoring
 
             echo '${{ steps.prometheus.outputs.content }}' | base64 -d > prometheus.yml
             echo '${{ steps.alerts.outputs.content }}' | base64 -d > hikaricp_alerts.yml
             echo '${{ steps.compose.outputs.content }}' | base64 -d > docker-compose.yml
             echo '${{ steps.grafana-datasource.outputs.content }}' | base64 -d > grafana/provisioning/datasources/prometheus.yml
+            
+            # Create Loki datasource
+            cat > grafana/provisioning/datasources/loki.yml << 'EOF'
+            apiVersion: 1
+
+            datasources:
+              - name: Loki
+                type: loki
+                access: proxy
+                url: http://loki:3100
+                editable: true
+                readOnly: false
+            EOF
             echo '${{ steps.grafana-dashboard.outputs.content }}' | base64 -d > grafana/provisioning/dashboards/provider.yml
+            
+            # Create HikariCP dashboard JSON
+            cat > grafana/provisioning/dashboards/hikaricp-dashboard.json << 'EOF'
+            {
+              "id": null,
+              "title": "HikariCP Connection Pool Monitoring",
+              "tags": ["hikaricp", "database", "monitoring"],
+              "timezone": "",
+              "panels": [
+                {
+                  "id": 1,
+                  "title": "Connection Pool Usage (%)",
+                  "type": "timeseries",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "percent",
+                      "thresholds": {
+                        "steps": [
+                          {"color": "green", "value": null},
+                          {"color": "yellow", "value": 70},
+                          {"color": "red", "value": 85}
+                        ]
+                      }
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "(hikaricp_connections_active / hikaricp_connections_max) * 100",
+                      "refId": "A"
+                    }
+                  ]
+                },
+                {
+                  "id": 2,
+                  "title": "Active Connections",
+                  "type": "timeseries",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "short"
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "hikaricp_connections_active",
+                      "refId": "A"
+                    }
+                  ]
+                },
+                {
+                  "id": 3,
+                  "title": "Idle Connections", 
+                  "type": "timeseries",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "short"
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "hikaricp_connections_idle",
+                      "refId": "A"
+                    }
+                  ]
+                },
+                {
+                  "id": 4,
+                  "title": "Max Connections",
+                  "type": "timeseries", 
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "short"
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "hikaricp_connections_max",
+                      "refId": "A"
+                    }
+                  ]
+                }
+              ],
+              "time": {"from": "now-1h", "to": "now"},
+              "refresh": "15s",
+              "schemaVersion": 38,
+              "version": 1,
+              "uid": "hikaricp-monitoring"
+            }
+            EOF
+
+            # Move to final location with sudo
+            sudo mv ~/monitoring /opt/monitoring
+            sudo chown -R $USER:$USER /opt/monitoring
+            cd /opt/monitoring
 
             sudo docker compose -f docker-compose.yml down --remove-orphans || true
             sudo docker system prune -f || true
@@ -253,4 +385,3 @@ jobs:
           echo "Grafana:    http://${{ secrets.MONITORING_EC2_HOST }}:3001"
           curl -sSf --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:9090/-/healthy | cat || true
           curl -sSf --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:3001/api/health | cat || true
-# 시험

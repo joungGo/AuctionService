@@ -269,13 +269,23 @@ public class GlobalExceptionAdvisor {
     }
     
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<Map<String, Object>> handleHttpRequestMethodNotSupportedException(HttpRequestMethodNotSupportedException ex) {
-        log.warn("[HTTP 오류] 지원되지 않는 HTTP 메서드: {}", ex.getMessage());
+    public ResponseEntity<Map<String, Object>> handleHttpRequestMethodNotSupportedException(
+            HttpRequestMethodNotSupportedException ex, 
+            jakarta.servlet.http.HttpServletRequest request) {
+        
+        log.warn("[HTTP 405 오류] 지원되지 않는 HTTP 메서드 - URI: {}, Method: {}, Supported: {}, User-Agent: {}, Remote-IP: {}", 
+                request.getRequestURI(),
+                ex.getMethod(), 
+                ex.getSupportedMethods(),
+                request.getHeader("User-Agent"),
+                request.getRemoteAddr());
         
         Map<String, Object> response = new HashMap<>();
         response.put("error", "지원되지 않는 HTTP 메서드입니다. 허용된 메서드: " + String.join(", ", ex.getSupportedMethods()));
         response.put("timestamp", String.valueOf(System.currentTimeMillis()));
         response.put("errorType", "METHOD_NOT_ALLOWED");
+        response.put("requestedMethod", ex.getMethod());
+        response.put("allowedMethods", ex.getSupportedMethods());
         
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response);
     }
