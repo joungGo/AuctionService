@@ -225,15 +225,21 @@ jobs:
               sudo apt-get install -y docker-compose-plugin
             fi
 
-            sudo mkdir -p /opt/monitoring/grafana/provisioning/datasources /opt/monitoring/grafana/provisioning/dashboards
-            sudo chown -R $USER:$USER /opt/monitoring
-            cd /opt/monitoring
+            # Create directories and files with proper permissions
+            sudo rm -rf /opt/monitoring || true
+            mkdir -p ~/monitoring/grafana/provisioning/datasources ~/monitoring/grafana/provisioning/dashboards
+            cd ~/monitoring
 
             echo '${{ steps.prometheus.outputs.content }}' | base64 -d > prometheus.yml
             echo '${{ steps.alerts.outputs.content }}' | base64 -d > hikaricp_alerts.yml
             echo '${{ steps.compose.outputs.content }}' | base64 -d > docker-compose.yml
             echo '${{ steps.grafana-datasource.outputs.content }}' | base64 -d > grafana/provisioning/datasources/prometheus.yml
             echo '${{ steps.grafana-dashboard.outputs.content }}' | base64 -d > grafana/provisioning/dashboards/provider.yml
+
+            # Move to final location with sudo
+            sudo mv ~/monitoring /opt/monitoring
+            sudo chown -R $USER:$USER /opt/monitoring
+            cd /opt/monitoring
 
             sudo docker compose -f docker-compose.yml down --remove-orphans || true
             sudo docker system prune -f || true
