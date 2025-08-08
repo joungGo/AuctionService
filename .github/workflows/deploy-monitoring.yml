@@ -226,6 +226,7 @@ jobs:
             fi
 
             sudo mkdir -p /opt/monitoring/grafana/provisioning/datasources /opt/monitoring/grafana/provisioning/dashboards
+            sudo chown -R $USER:$USER /opt/monitoring
             cd /opt/monitoring
 
             echo '${{ steps.prometheus.outputs.content }}' | base64 -d > prometheus.yml
@@ -253,4 +254,3 @@ jobs:
           echo "Grafana:    http://${{ secrets.MONITORING_EC2_HOST }}:3001"
           curl -sSf --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:9090/-/healthy | cat || true
           curl -sSf --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:3001/api/health | cat || true
-# 시험
