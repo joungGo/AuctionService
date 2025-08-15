@@ -54,7 +54,7 @@ public class BidController {
                 return;
             }
 
-            log.debug("[WebSocket 입찰] JWT 토큰 추출 성공: {}", token.substring(0, Math.min(token.length(), 20)) + "...");
+            log.debug("[WebSocket 입찰] JWT 토큰 추출 성공: ");
 
             // 토큰 유효성 검증
             if (!jwtProvider.validateToken(token)) {
