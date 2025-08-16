@@ -21,8 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.example.bidflow.data.AuctionStatus;
 
 @Slf4j
 @Service
@@ -41,7 +43,7 @@ public class BidService {
                 auctionId, request.getAmount(), userUUID);
         
         String hashKey = "auction:" + auctionId;
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
         try {
             // 유저 및 경매 정보 가져오기 (userUUID는 파라미터로 받음)
@@ -72,7 +74,7 @@ public class BidService {
                     auctionId, currentBidAmount, request.getAmount(), user.getNickname());
 
             // DB 저장 (낙찰용 로그로 남김)
-            Bid bid = Bid.createBid(auction, user, request.getAmount(), LocalDateTime.now());
+            Bid bid = Bid.createBid(auction, user, request.getAmount(), LocalDateTime.now(ZoneId.of("Asia/Seoul")));
             bidRepository.save(bid);
             
             long endTime = System.currentTimeMillis();
@@ -249,14 +251,28 @@ public class BidService {
 
     // 경매 시간 유효성 검증
     private void validateAuctionTime(LocalDateTime now,  Auction auction) {
-        if(now.isBefore(auction.getStartTime())){
-            log.warn("[입찰 검증 실패] 경매 시작 전 입찰 시도 - 경매ID: {}, 현재시간: {}, 시작시간: {}", 
-                    auction.getAuctionId(), now, auction.getStartTime());
+        // 경매 상태를 우선적으로 확인
+        if (auction.getStatus() == AuctionStatus.UPCOMING) {
+            log.warn("[입찰 검증 실패] 경매 시작 전 입찰 시도 - 경매ID: {}, 현재상태: {}, 시작시간: {}",
+                    auction.getAuctionId(), auction.getStatus(), auction.getStartTime());
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 시작 전입니다.");
-        }else if(now.isAfter(auction.getEndTime())){
-            log.warn("[입찰 검증 실패] 경매 종료 후 입찰 시도 - 경매ID: {}, 현재시간: {}, 종료시간: {}", 
-                    auction.getAuctionId(), now, auction.getEndTime());
+        } else if (auction.getStatus() == AuctionStatus.FINISHED) {
+            log.warn("[입찰 검증 실패] 경매 종료 후 입찰 시도 - 경매ID: {}, 현재상태: {}, 종료시간: {}",
+                    auction.getAuctionId(), auction.getStatus(), auction.getEndTime());
             throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 종료 되었습니다.");
+        }
+
+        // 경매 상태가 ONGOING인 경우에만 시간 검증 수행
+        if (auction.getStatus() == AuctionStatus.ONGOING) {
+            if(now.isBefore(auction.getStartTime())){
+                log.warn("[입찰 검증 실패] 경매 시작 전 입찰 시도 - 경매ID: {}, 현재시간: {}, 시작시간: {}, 상태: {}",
+                        auction.getAuctionId(), now, auction.getStartTime(), auction.getStatus());
+                throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 시작 전입니다.");
+            }else if(now.isAfter(auction.getEndTime())){
+                log.warn("[입찰 검증 실패] 경매 종료 후 입찰 시도 - 경매ID: {}, 현재시간: {}, 종료시간: {}, 상태: {}",
+                        auction.getAuctionId(), now, auction.getEndTime(), auction.getStatus());
+                throw new ServiceException(HttpStatus.BAD_REQUEST.toString(), "경매가 종료 되었습니다.");
+            }
         }
     }
 

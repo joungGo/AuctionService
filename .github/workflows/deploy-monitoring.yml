@@ -1,0 +1,387 @@
+name: Deploy Monitoring Stack (Prometheus + Grafana)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Reason for deployment
+        required: true
+        default: Manual trigger
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Prometheus configuration (prod)
+        id: prometheus
+        run: |
+          cat > prometheus.yml << 'EOF'
+          # Prometheus config (production)
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          rule_files:
+            - "hikaricp_alerts.yml"
+
+          scrape_configs:
+            # Spring Boot application metrics (main app instance)
+            - job_name: 'auction-service'
+              scheme: https
+              static_configs:
+                - targets: ['${{ secrets.MONITORED_APP_TARGET }}']
+                  labels:
+                    application: 'auction-service'
+                    environment: 'production'
+                    instance: 'main-app'
+              metrics_path: '/actuator/prometheus'
+              scrape_interval: 15s
+              scrape_timeout: 10s
+
+            # Prometheus self metrics
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+                  labels:
+                    application: 'prometheus'
+                    environment: 'production'
+              metrics_path: '/metrics'
+              scrape_interval: 15s
+          EOF
+          echo "content=$(base64 -w 0 prometheus.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate HikariCP alert rules
+        id: alerts
+        run: |
+          cat > hikaricp_alerts.yml << 'EOF'
+          groups:
+            - name: hikaricp_alerts
+              rules:
+                - alert: HighHikariCPPoolUsage
+                  expr: (hikaricp_connections_active / hikaricp_connections_max) * 100 > 80
+                  for: 2m
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "높은 HikariCP 커넥션 풀 사용률"
+                    description: "HikariCP 커넥션 풀 사용률이 80%를 초과했습니다. 현재 사용률: {{ $value }}%"
+
+                - alert: CriticalHikariCPPoolUsage
+                  expr: (hikaricp_connections_active / hikaricp_connections_max) * 100 > 95
+                  for: 1m
+                  labels:
+                    severity: critical
+                    application: auction-service
+                  annotations:
+                    summary: "크리티컬 HikariCP 커넥션 풀 사용률"
+                    description: "HikariCP 커넥션 풀 사용률이 95%를 초과했습니다. 현재 사용률: {{ $value }}%"
+
+                - alert: HikariCPConnectionAcquireTimeout
+                  expr: rate(hikaricp_connections_acquire_seconds_sum[5m]) / rate(hikaricp_connections_acquire_seconds_count[5m]) > 1
+                  for: 1m
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "HikariCP 커넥션 획득 타임아웃"
+                    description: "평균 커넥션 획득 시간이 1초를 초과했습니다. 현재 평균: {{ $value }}s"
+
+                - alert: HikariCPPendingThreads
+                  expr: hikaricp_connections_pending > 0
+                  for: 1m
+                  labels:
+                    severity: warning
+                    application: auction-service
+                  annotations:
+                    summary: "HikariCP 대기 스레드 발생"
+                    description: "커넥션 풀에서 대기 중인 스레드가 있습니다. 대기 중인 스레드: {{ $value }}"
+          EOF
+          echo "content=$(base64 -w 0 hikaricp_alerts.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate Grafana provisioning - datasource
+        id: grafana-datasource
+        run: |
+          cat > grafana-datasource.yml << 'EOF'
+          apiVersion: 1
+
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: http://prometheus:9090
+              jsonData:
+                httpMethod: POST
+                manageAlerts: true
+                prometheusType: Prometheus
+                prometheusVersion: 3.3.0
+                cacheLevel: High
+                allowAsRecordingRulesTarget: true
+                timeInterval: 10s
+                incrementalQueryOverlapWindow: 10m
+              editable: true
+              readOnly: false
+          EOF
+          echo "content=$(base64 -w 0 grafana-datasource.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate Grafana provisioning - dashboard provider
+        id: grafana-dashboard
+        run: |
+          cat > grafana-dashboard.yml << 'EOF'
+          apiVersion: 1
+
+          providers:
+            - name: 'HikariCP Dashboards'
+              orgId: 1
+              folder: ''
+              type: file
+              options:
+                path: /etc/grafana/provisioning/dashboards
+              disableDeletion: false
+              editable: true
+              updateIntervalSeconds: 10
+          EOF
+          echo "content=$(base64 -w 0 grafana-dashboard.yml)" >> $GITHUB_OUTPUT
+
+      - name: Generate Docker Compose configuration
+        id: compose
+        run: |
+          cat > docker-compose.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            prometheus:
+              image: prom/prometheus:latest
+              container_name: auction-prometheus
+              restart: unless-stopped
+              ports:
+                - "9090:9090"
+              volumes:
+                - ./prometheus.yml:/etc/prometheus/prometheus.yml
+                - ./hikaricp_alerts.yml:/etc/prometheus/hikaricp_alerts.yml
+                - prometheus_data:/prometheus
+              command:
+                - '--config.file=/etc/prometheus/prometheus.yml'
+                - '--storage.tsdb.path=/prometheus'
+                - '--web.console.libraries=/etc/prometheus/console_libraries'
+                - '--web.console.templates=/etc/prometheus/consoles'
+                - '--storage.tsdb.retention.time=${{ secrets.PROMETHEUS_RETENTION_DAYS || 30 }}d'
+                - '--web.enable-lifecycle'
+              networks:
+                - monitoring
+
+            grafana:
+              image: grafana/grafana:latest
+              container_name: auction-grafana
+              restart: unless-stopped
+              ports:
+                - "3001:3000"
+              environment:
+                - GF_SECURITY_ADMIN_USER=admin
+                - GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+                - GF_USERS_ALLOW_SIGN_UP=false
+              volumes:
+                - ./grafana/provisioning:/etc/grafana/provisioning
+                - grafana_data:/var/lib/grafana
+              depends_on:
+                - prometheus
+                - loki
+              networks:
+                - monitoring
+
+            loki:
+              image: grafana/loki:latest
+              container_name: auction-loki
+              restart: unless-stopped
+              ports:
+                - "3100:3100"
+              command: -config.file=/etc/loki/local-config.yaml
+              networks:
+                - monitoring
+
+          volumes:
+            prometheus_data:
+              driver: local
+            grafana_data:
+              driver: local
+
+          networks:
+            monitoring:
+              driver: bridge
+          EOF
+          echo "content=$(base64 -w 0 docker-compose.yml)" >> $GITHUB_OUTPUT
+
+      - name: Deploy to monitoring EC2 (SSH)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.MONITORING_EC2_HOST }}
+          username: ${{ secrets.MONITORING_EC2_USER }}
+          key: ${{ secrets.MONITORING_EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "Preparing host..."
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y docker.io
+              sudo usermod -aG docker $USER || true
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+            if ! docker compose version >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y docker-compose-plugin
+            fi
+
+            # Create directories and files with proper permissions
+            sudo rm -rf /opt/monitoring || true
+            mkdir -p ~/monitoring/grafana/provisioning/datasources ~/monitoring/grafana/provisioning/dashboards
+            cd ~/monitoring
+
+            echo '${{ steps.prometheus.outputs.content }}' | base64 -d > prometheus.yml
+            echo '${{ steps.alerts.outputs.content }}' | base64 -d > hikaricp_alerts.yml
+            echo '${{ steps.compose.outputs.content }}' | base64 -d > docker-compose.yml
+            echo '${{ steps.grafana-datasource.outputs.content }}' | base64 -d > grafana/provisioning/datasources/prometheus.yml
+            
+            # Create Loki datasource
+            cat > grafana/provisioning/datasources/loki.yml << 'EOF'
+            apiVersion: 1
+
+            datasources:
+              - name: Loki
+                type: loki
+                access: proxy
+                url: http://loki:3100
+                editable: true
+                readOnly: false
+            EOF
+            echo '${{ steps.grafana-dashboard.outputs.content }}' | base64 -d > grafana/provisioning/dashboards/provider.yml
+            
+            # Create HikariCP dashboard JSON
+            cat > grafana/provisioning/dashboards/hikaricp-dashboard.json << 'EOF'
+            {
+              "id": null,
+              "title": "HikariCP Connection Pool Monitoring",
+              "tags": ["hikaricp", "database", "monitoring"],
+              "timezone": "",
+              "panels": [
+                {
+                  "id": 1,
+                  "title": "Connection Pool Usage (%)",
+                  "type": "timeseries",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "percent",
+                      "thresholds": {
+                        "steps": [
+                          {"color": "green", "value": null},
+                          {"color": "yellow", "value": 70},
+                          {"color": "red", "value": 85}
+                        ]
+                      }
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "(hikaricp_connections_active / hikaricp_connections_max) * 100",
+                      "refId": "A"
+                    }
+                  ]
+                },
+                {
+                  "id": 2,
+                  "title": "Active Connections",
+                  "type": "timeseries",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "short"
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "hikaricp_connections_active",
+                      "refId": "A"
+                    }
+                  ]
+                },
+                {
+                  "id": 3,
+                  "title": "Idle Connections", 
+                  "type": "timeseries",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "short"
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "hikaricp_connections_idle",
+                      "refId": "A"
+                    }
+                  ]
+                },
+                {
+                  "id": 4,
+                  "title": "Max Connections",
+                  "type": "timeseries", 
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+                  "fieldConfig": {
+                    "defaults": {
+                      "color": {"mode": "palette-classic"},
+                      "unit": "short"
+                    }
+                  },
+                  "targets": [
+                    {
+                      "datasource": {"type": "prometheus", "uid": "prometheus"},
+                      "expr": "hikaricp_connections_max",
+                      "refId": "A"
+                    }
+                  ]
+                }
+              ],
+              "time": {"from": "now-1h", "to": "now"},
+              "refresh": "15s",
+              "schemaVersion": 38,
+              "version": 1,
+              "uid": "hikaricp-monitoring"
+            }
+            EOF
+
+            # Move to final location with sudo
+            sudo mv ~/monitoring /opt/monitoring
+            sudo chown -R $USER:$USER /opt/monitoring
+            cd /opt/monitoring
+
+            sudo docker compose -f docker-compose.yml down --remove-orphans || true
+            sudo docker system prune -f || true
+            sudo docker compose -f docker-compose.yml up -d
+
+            echo "Waiting for containers..."
+            sleep 10
+            sudo docker compose -f docker-compose.yml ps
+
+            echo "Prometheus health:"
+            curl -f --max-time 10 http://localhost:9090/-/healthy || true
+            echo "Grafana health:"
+            curl -f --max-time 10 http://localhost:3001/api/health || true
+
+      - name: Verify from GitHub runner
+        run: |
+          echo "Prometheus: http://${{ secrets.MONITORING_EC2_HOST }}:9090"
+          echo "Grafana:    http://${{ secrets.MONITORING_EC2_HOST }}:3001"
+          curl -sSf --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:9090/-/healthy | cat || true
+          curl -sSf --max-time 10 http://${{ secrets.MONITORING_EC2_HOST }}:3001/api/health | cat || true

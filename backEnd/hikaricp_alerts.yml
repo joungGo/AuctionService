@@ -1,0 +1,84 @@
+# HikariCP 커넥션 풀 모니터링 알림 규칙
+# Prometheus에서 HikariCP 메트릭을 기반으로 알림을 발생시키는 규칙들
+
+groups:
+  # HikariCP 관련 알림 그룹
+  - name: hikaricp_alerts
+    rules:
+      # 높은 커넥션 풀 사용률 알림
+      - alert: HighConnectionPoolUsage
+        # 커넥션 풀 사용률이 80%를 초과하는 경우
+        expr: (hikaricp_connections_active / hikaricp_pool_size) > 0.8
+        # 5분 동안 지속될 때 알림 발생
+        for: 5m
+        # 알림 라벨 설정
+        labels:
+          severity: warning
+          component: database
+          service: auction-service
+        # 알림 메시지 설정
+        annotations:
+          summary: "높은 커넥션 풀 사용률"
+          description: "커넥션 풀 사용률이 80%를 초과했습니다. 현재 사용률: {{ $value | humanizePercentage }}"
+          # Grafana 대시보드 링크 (실제 환경에 맞게 수정 필요)
+          dashboard: "http://localhost:3001/d/hikaricp/hikaricp-connection-pool-monitoring"
+
+      # 커넥션 획득 타임아웃 알림
+      - alert: ConnectionAcquisitionTimeout
+        # 커넥션 획득 평균 시간이 1초를 초과하는 경우
+        expr: rate(hikaricp_connections_acquire_seconds_sum[5m]) / rate(hikaricp_connections_acquire_seconds_count[5m]) > 1
+        # 2분 동안 지속될 때 알림 발생
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+          service: auction-service
+        annotations:
+          summary: "커넥션 획득 타임아웃"
+          description: "평균 커넥션 획득 시간이 1초를 초과했습니다. 현재 평균: {{ $value | humanizeDuration }}"
+          dashboard: "http://localhost:3001/d/hikaricp/hikaricp-connection-pool-monitoring"
+
+      # 사용 가능한 커넥션이 없는 상황 알림
+      - alert: NoAvailableConnections
+        # 커넥션을 기다리는 스레드가 있는 경우
+        expr: hikaricp_connections_pending > 0
+        # 1분 동안 지속될 때 알림 발생
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+          service: auction-service
+        annotations:
+          summary: "사용 가능한 커넥션 없음"
+          description: "스레드들이 데이터베이스 커넥션을 기다리고 있습니다. 대기 중인 스레드: {{ $value }}"
+          dashboard: "http://localhost:3001/d/hikaricp/hikaricp-connection-pool-monitoring"
+
+      # 커넥션 풀 사용률이 95%를 초과하는 심각한 상황
+      - alert: CriticalConnectionPoolUsage
+        # 커넥션 풀 사용률이 95%를 초과하는 경우
+        expr: (hikaricp_connections_active / hikaricp_pool_size) > 0.95
+        # 2분 동안 지속될 때 알림 발생
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+          service: auction-service
+        annotations:
+          summary: "심각한 커넥션 풀 사용률"
+          description: "커넥션 풀 사용률이 95%를 초과했습니다. 즉시 조치가 필요합니다. 현재 사용률: {{ $value | humanizePercentage }}"
+          dashboard: "http://localhost:3001/d/hikaricp/hikaricp-connection-pool-monitoring"
+
+      # 커넥션 획득 실패율이 높은 경우
+      - alert: HighConnectionAcquisitionFailureRate
+        # 커넥션 획득 실패율이 10%를 초과하는 경우 (예시)
+        # 실제로는 hikaricp에서 제공하는 실패 메트릭이 필요
+        expr: rate(hikaricp_connections_acquire_seconds_count[5m]) > 0 and rate(hikaricp_connections_acquire_seconds_sum[5m]) / rate(hikaricp_connections_acquire_seconds_count[5m]) > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+          service: auction-service
+        annotations:
+          summary: "높은 커넥션 획득 실패율"
+          description: "커넥션 획득에 실패하는 비율이 높습니다. 네트워크 또는 데이터베이스 문제를 확인하세요."
+          dashboard: "http://localhost:3001/d/hikaricp/hikaricp-connection-pool-monitoring" 

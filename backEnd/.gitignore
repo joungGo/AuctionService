@@ -57,6 +57,3 @@ log/
 
 ### Docker & Monitoring ###
 docker-compose.yml
-prometheus-server.yml
-hikaricp_alerts.yml
-grafana/

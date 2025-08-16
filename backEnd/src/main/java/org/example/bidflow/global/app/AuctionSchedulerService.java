@@ -39,13 +39,13 @@ public class AuctionSchedulerService {
             Long auctionId = auction.getAuctionId();
             
             log.info("[AuctionScheduler] 경매 스케줄 등록 시작 - 경매 ID: {}, 현재시간: {}", 
-                    auctionId, LocalDateTime.now());
+                    auctionId, LocalDateTime.now(ZoneId.of("Asia/Seoul")));
             
             // 기존 스케줄이 있다면 제거
             unscheduleAuction(auctionId);
             
             // 경매 시작 스케줄 등록
-            if (auction.getStartTime() != null && auction.getStartTime().isAfter(LocalDateTime.now())) {
+            if (auction.getStartTime() != null && auction.getStartTime().isAfter(LocalDateTime.now(ZoneId.of("Asia/Seoul")))) {
                 scheduleAuctionStart(auctionId, auction.getStartTime());
                 log.info("[AuctionScheduler] 경매 시작 스케줄 등록 완료 - 경매 ID: {}, 시작시간: {}", 
                         auctionId, auction.getStartTime());
@@ -55,7 +55,7 @@ public class AuctionSchedulerService {
             }
             
             // 경매 종료 스케줄 등록
-            if (auction.getEndTime() != null && auction.getEndTime().isAfter(LocalDateTime.now())) {
+            if (auction.getEndTime() != null && auction.getEndTime().isAfter(LocalDateTime.now(ZoneId.of("Asia/Seoul")))) {
                 scheduleAuctionEnd(auctionId, auction.getEndTime());
                 log.info("[AuctionScheduler] 경매 종료 스케줄 등록 완료 - 경매 ID: {}, 종료시간: {}", 
                         auctionId, auction.getEndTime());
