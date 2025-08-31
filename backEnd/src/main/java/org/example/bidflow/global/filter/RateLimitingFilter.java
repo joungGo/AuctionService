@@ -27,6 +27,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
+@Order(2) // JwtAuthenticationFilter 다음에 실행 -> 인증된 사용자 정보가 필요하기 때문!
 @RequiredArgsConstructor
 public class RateLimitingFilter extends OncePerRequestFilter {
 
@@ -98,6 +99,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 handleRateLimitExceeded(response, apiResult, "API", requestUri);
                 return;
             }
+
+            // 4. 응답 헤더에 Rate Limit 정보 추가 (클라이언트 가이드용)
+            addRateLimitHeaders(response, ipResult, userUUID != null);
 
             log.debug("[Rate Limiting] 요청 허용 - IP: {}, URI: {}, User: {}", clientIp, requestUri, userUUID);
             
@@ -219,5 +223,20 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         // JSON 응답 생성 및 전송
         String jsonResponse = objectMapper.writeValueAsString(errorResponse);
         response.getWriter().write(jsonResponse);
+    }
+
+    /**
+     * 응답 헤더에 Rate Limit 정보 추가
+     * 클라이언트가 현재 Rate Limit 상태를 파악할 수 있도록 헤더 정보 제공
+     * @param isAuthenticated 인증된 사용자 여부
+     */
+    private void addRateLimitHeaders(HttpServletResponse response, RateLimitResult result, boolean isAuthenticated) {
+        // 남은 요청 수 헤더 추가 (유효한 값인 경우에만)
+        if (result.getRemainingTokens() >= 0) {
+            response.setHeader("X-RateLimit-Remaining", String.valueOf(result.getRemainingTokens()));
+        }
+
+        // 적용된 Rate Limiting 타입 정보 추가 (클라이언트 디버깅용)
+        response.setHeader("X-RateLimit-Type", isAuthenticated ? "USER" : "IP");
     }
 }
