@@ -192,3 +192,19 @@ cookie:
   secure: false     # 로컬 HTTP 환경
   same-site: Lax    # 로컬 환경에서 적절한 설정
   domain:           # 도메인 설정 없음
+
+# Rate Limiting 설정
+rate-limiting:
+  enabled: ${RATE_LIMITING_ENABLED:true}  # 환경변수로 제어 가능
+  
+  # 기본 IP 기반 제한
+  default-ip-limit:
+    requests-per-minute: ${RATE_LIMIT_IP_PER_MINUTE:100}
+    requests-per-hour: ${RATE_LIMIT_IP_PER_HOUR:1000}
+  
+  # 인증된 사용자 제한
+  user-limit:
+    authenticated-user-requests-per-minute: ${RATE_LIMIT_USER_PER_MINUTE:500}
+    authenticated-user-requests-per-hour: ${RATE_LIMIT_USER_PER_HOUR:5000}
+  
+  # API별 개별 제한 (코드에서 정의된 기본값 사용)
