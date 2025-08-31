@@ -1,0 +1,223 @@
+package org.example.bidflow.global.filter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.example.bidflow.global.service.RateLimitingService;
+import org.example.bidflow.global.service.RateLimitingService.RateLimitResult;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Rate Limiting 필터
+ * 모든 HTTP 요청에 대해 IP 기반 및 사용자 기반 요청 제한을 적용합니다.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class RateLimitingFilter extends OncePerRequestFilter {
+
+    /** Rate Limiting 핵심 서비스 - 실제 제한 검사 로직 담당 */
+    private final RateLimitingService rateLimitingService;
+    
+    /** JSON 직렬화/역직렬화 - 에러 응답 생성용 */
+    private final ObjectMapper objectMapper;
+
+    /**
+     * 특정 요청에 대해 Rate Limiting을 적용하지 않을지 결정
+     * WebSocket 연결과 CORS Preflight 요청은 제외
+     *
+     * @return true이면 필터를 적용하지 않음, false이면 적용
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        String method = request.getMethod();
+        
+        // WebSocket 연결은 제외 (별도의 Rate Limiting 메커니즘 사용)
+        if (path.startsWith("/ws")) {
+            return true;
+        }
+        
+        // OPTIONS 요청은 제외 (CORS preflight 요청은 실제 API 호출이 아님)
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            return true;
+        }
+        
+        return false; // 나머지 모든 요청에 Rate Limiting 적용
+    }
+
+    /**
+     * Rate Limiting 핵심 처리 로직
+     * 1. IP 기반 제한 검사 2. 사용자 기반 제한 검사 3. API별 제한 검사를 순차적으로 수행
+     */
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+
+        try {
+            String clientIp = getClientIpAddress(request);
+            String requestUri = request.getRequestURI(); // 요청된 API 경로
+            
+            log.debug("[Rate Limiting] 요청 검사 시작 - IP: {}, URI: {}", clientIp, requestUri);
+
+            // 1. IP 기반 제한 검사 (모든 요청에 적용되는 기본 제한)
+            RateLimitResult ipResult = rateLimitingService.checkIpLimit(clientIp);
+            if (!ipResult.isAllowed()) {
+                handleRateLimitExceeded(response, ipResult, "IP", clientIp);
+                return;
+            }
+
+            // 2. 인증된 사용자의 경우 추가 제한 검사 (더 관대한 제한)
+            String userUUID = getCurrentUserUUID();
+            if (userUUID != null) {
+                RateLimitResult userResult = rateLimitingService.checkUserLimit(userUUID);
+                if (!userResult.isAllowed()) {
+                    handleRateLimitExceeded(response, userResult, "USER", userUUID);
+                    return;
+                }
+            }
+
+            // 3. API별 제한 검사 (특정 API에 대한 세밀한 제한)
+            String identifier = userUUID != null ? userUUID : clientIp;
+            RateLimitResult apiResult = rateLimitingService.checkApiLimit(requestUri, identifier);
+            if (!apiResult.isAllowed()) {
+                handleRateLimitExceeded(response, apiResult, "API", requestUri);
+                return;
+            }
+
+            log.debug("[Rate Limiting] 요청 허용 - IP: {}, URI: {}, User: {}", clientIp, requestUri, userUUID);
+            
+        } catch (Exception e) {
+            log.error("[Rate Limiting] 필터 처리 중 오류 발생: {}", e.getMessage(), e);
+            // 오류 발생 시 요청 허용 (서비스 가용성 우선 - Fail Open 정책)
+        }
+
+        // Rate Limiting 통과 시 다음 필터로 요청 전달
+        filterChain.doFilter(request, response);
+    }
+
+    /**
+     * 클라이언트 IP 주소 추출
+     * 프록시, 로드밸런서 환경을 고려한 실제 IP 추출
+     * ALB(Application Load Balancer) 환경에서 X-Forwarded-For 헤더 우선 처리
+     * 
+     * @param request HTTP 요청 객체
+     * @return 클라이언트의 실제 IP 주소
+     */
+    private String getClientIpAddress(HttpServletRequest request) {
+        // X-Forwarded-For 헤더 확인 (ALB, 프록시 환경)
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
+            // 첫 번째 IP가 실제 클라이언트 IP
+            log.info("추출한 IP 주소(X-Forwarded-For 헤더 - ALB, 프록시 환경) {}", xForwardedFor.split(",")[0].trim());
+            return xForwardedFor.split(",")[0].trim();
+        }
+
+        // X-Real-IP 헤더 확인 (Nginx 프록시에서 주로 사용)
+        String xRealIp = request.getHeader("X-Real-IP");
+        if (xRealIp != null && !xRealIp.isEmpty() && !"unknown".equalsIgnoreCase(xRealIp)) {
+            log.info("추출한 IP 주소(X-Real-IP 헤더 - Nginx 프록시) {}", xRealIp);
+            return xRealIp;
+        }
+
+        // X-Forwarded 헤더 확인 (일반적인 프록시 환경)
+        String xForwarded = request.getHeader("X-Forwarded");
+        if (xForwarded != null && !xForwarded.isEmpty() && !"unknown".equalsIgnoreCase(xForwarded)) {
+            log.info("추출한 IP 주소(X-Forwarded 헤더 - 일반적인 프록시) {}", xForwarded);
+            return xForwarded;
+        }
+
+        // Forwarded-For 헤더 확인 (표준 RFC 7239)
+        String forwardedFor = request.getHeader("Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(forwardedFor)) {
+            log.info("추출한 IP 주소(Forwarded-For 헤더 - 표준 RFC 7239) {}", forwardedFor);
+            return forwardedFor;
+        }
+
+        // 모든 프록시 헤더가 없으면 기본 remote address 사용
+        log.info("추출한 IP 주소(기본 remote address - 프록시 헤더 없음) {}", request.getRemoteAddr());
+        return request.getRemoteAddr();
+    }
+
+    /**
+     * 현재 인증된 사용자의 UUID 추출
+     * Spring Security 컨텍스트에서 인증된 사용자 정보를 가져옴
+     * JWT 필터가 먼저 실행되어 인증 정보가 설정된 상태
+     * 
+     * @return 인증된 사용자의 UUID, 미인증 시 null
+     */
+    private String getCurrentUserUUID() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.isAuthenticated()) {
+                String username = authentication.getName();
+                if (!"anonymousUser".equals(username)) {
+                    // JWT에서 userUUID 추출 시도 (실제 구현에 따라 조정 필요)
+                    return username; // TODO: 실제로는 JWT에서 userUUID 추출 로직 구현 필요
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[Rate Limiting] 사용자 정보 추출 실패: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Rate Limit 초과 시 응답 처리
+     * HTTP 429 상태 코드와 함께 상세한 에러 정보를 JSON으로 반환
+     * 
+     * @param response HTTP 응답 객체
+     * @param result Rate Limiting 검사 결과
+     * @param limitType 제한 타입 (IP, USER, API)
+     * @param identifier 제한 대상 식별자
+     */
+    private void handleRateLimitExceeded(HttpServletResponse response, RateLimitResult result, 
+                                       String limitType, String identifier) throws IOException {
+        
+        log.warn("[Rate Limiting] 요청 제한 초과 - 타입: {}, 식별자: {}, 재시도 가능 시간: {}초", 
+                limitType, identifier, result.getRetryAfter() != null ? result.getRetryAfter().getSeconds() : "N/A");
+
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value()); // HTTP 429 상태 코드
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE); // JSON 응답 타입
+        response.setCharacterEncoding("UTF-8"); // UTF-8 인코딩
+
+        // Retry-After 헤더 설정 (클라이언트가 재시도할 수 있는 시간)
+        if (result.getRetryAfter() != null) {
+            response.setHeader("Retry-After", String.valueOf(result.getRetryAfter().getSeconds()));
+        }
+
+        // Rate Limit 관련 커스텀 헤더 설정
+        response.setHeader("X-RateLimit-Limit-Type", limitType); // 제한 타입
+        response.setHeader("X-RateLimit-Remaining", String.valueOf(Math.max(0, result.getRemainingTokens()))); // 남은 요청 수
+
+        // 사용자 친화적인 에러 응답 생성
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."); // 사용자 메시지
+        errorResponse.put("errorType", "RATE_LIMIT_EXCEEDED"); // 에러 타입
+        errorResponse.put("limitType", limitType); // 제한 타입 (IP/USER/API)
+        errorResponse.put("timestamp", String.valueOf(System.currentTimeMillis())); // 타임스탬프
+        
+        // 재시도 가능 시간 정보 추가
+        if (result.getRetryAfter() != null) {
+            errorResponse.put("retryAfterSeconds", result.getRetryAfter().getSeconds());
+        }
+
+        // JSON 응답 생성 및 전송
+        String jsonResponse = objectMapper.writeValueAsString(errorResponse);
+        response.getWriter().write(jsonResponse);
+    }
+}
