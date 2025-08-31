@@ -158,4 +158,22 @@ public class RedisRateLimitingConfig {
             return KEY_PREFIX + "composite:" + ipAddress + ":" + safeApiPath + ":" + timeWindow;
         }
     }
+
+    /**
+     * Redis 연결 상태 체크
+     * Rate Limiting 시스템의 Redis 연결 상태를 확인하는 헬스체크 메서드
+     *
+     * @param redisClient 체크할 Redis 클라이언트
+     * @return Redis 연결 가능 여부
+     */
+    public boolean isRedisAvailable(RedisClient redisClient) {
+        try {
+            // Redis PING 명령으로 연결 상태 확인
+            redisClient.connect().sync().ping();
+            return true; // 연결 성공
+        } catch (Exception e) {
+            log.warn("[Rate Limiting] Redis 연결 상태 확인 실패: {}", e.getMessage());
+            return false; // 연결 실패
+        }
+    }
 }
