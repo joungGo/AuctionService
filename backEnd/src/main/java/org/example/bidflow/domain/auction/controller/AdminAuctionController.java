@@ -9,8 +9,10 @@ import org.example.bidflow.domain.auction.service.AuctionService;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.example.bidflow.global.annotation.RateLimit;
 
 import java.util.List;
+import java.time.temporal.ChronoUnit;
 
 @RestController
 @RequestMapping("/api/admin/auctions")
@@ -20,6 +22,9 @@ public class AdminAuctionController {
 
     // 경매 등록 컨트롤러
     @PostMapping
+    @RateLimit(requests = 10, window = 1, unit = ChronoUnit.MINUTES,
+               keyType = RateLimit.KeyType.USER_ONLY,
+               message = "경매 등록 요청이 너무 많습니다. 1분 후 다시 시도해주세요.")
     public ResponseEntity<RsData<AuctionCreateResponse>> createAuction(@Valid @RequestBody AuctionRequest requestDto) {
         RsData<AuctionCreateResponse> response = auctionService.createAuction(requestDto);
         return ResponseEntity.status(response.getStatusCode()).body(response);

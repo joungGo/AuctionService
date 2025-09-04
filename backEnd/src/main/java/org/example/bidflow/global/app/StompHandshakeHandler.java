@@ -68,13 +68,6 @@ public class StompHandshakeHandler implements HandshakeInterceptor {
             return token.substring(7); // "Bearer " 제거
         }
 
-        // 3. 쿼리 파라미터에서 토큰 추출 (SockJS 대응)
-        token = request.getParameter("token");
-        if (token != null) {
-            log.debug("[WebSocket] 쿼리 파라미터에서 토큰 추출 성공");
-            return token;
-        }
-
         log.debug("[WebSocket] 토큰을 찾을 수 없습니다.");
         return null;
     }

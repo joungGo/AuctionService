@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
+import org.example.bidflow.global.aspect.RateLimitingAspect.RateLimitExceededException;
 
 import jakarta.validation.ConstraintViolationException;
 import java.sql.SQLException;
@@ -398,6 +399,26 @@ public class GlobalExceptionAdvisor {
         response.put("errorType", "INVALID_STATE");
         
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    // =========================== Rate Limiting 예외 ===========================
+    
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleRateLimitExceededException(RateLimitExceededException ex) {
+        log.warn("[Rate Limiting] 요청 제한 초과 - 메시지: {}, 상세: {}", 
+                ex.getReason(), ex.getErrorDetails());
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("error", ex.getReason());
+        response.put("errorType", "RATE_LIMIT_EXCEEDED");
+        response.put("timestamp", String.valueOf(System.currentTimeMillis()));
+        
+        // 상세 정보 추가
+        if (ex.getErrorDetails() != null) {
+            response.putAll(ex.getErrorDetails());
+        }
+        
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response);
     }
 
     // =========================== 최종 예외 핸들러 ===========================
