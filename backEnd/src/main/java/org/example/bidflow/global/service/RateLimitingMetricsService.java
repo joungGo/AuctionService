@@ -32,29 +32,17 @@ public class RateLimitingMetricsService {
     /** API별 전체 요청 횟수 (스레드 안전) */
     private final ConcurrentHashMap<String, AtomicLong> apiRequestCounts = new ConcurrentHashMap<>();
 
-    // 초 단위 Burst Attack 감지를 위한 전용 메트릭
-    private Counter burstAttackCounter;
-    private Counter secondLimitHitCounter;
+    // Burst Attack 감지를 위한 타이머 (태그 없는 메트릭)
     private Timer burstDetectionTimer;
 
     /**
      * 애플리케이션 시작 시 Prometheus 메트릭 초기화
-     * Spring Bean 생성 후 자동 실행되어 모든 메트릭 카운터와 타이머를 등록
-     * 3단계 Rate Limiting(초/분/시간) 및 Burst Attack 감지 메트릭 추가
+     * Spring Bean 생성 후 자동 실행되어 타이머를 등록
+     * Counter는 태그와 함께 동적으로 생성되므로 여기서 초기화하지 않음
      */
     @PostConstruct
     public void initializeMetrics() {
-        // Burst Attack 감지 카운터
-        burstAttackCounter = Counter.builder("rate_limit_burst_attacks_total")
-                .description("Total number of detected burst attacks")
-                .register(meterRegistry);
-
-        // 초 단위 제한 적중 카운터
-        secondLimitHitCounter = Counter.builder("rate_limit_second_hits_total")
-                .description("Total number of second-level rate limit hits")
-                .register(meterRegistry);
-
-        // Burst 감지 성능 타이머
+        // Burst 감지 성능 타이머만 초기화 (태그가 없는 메트릭)
         burstDetectionTimer = Timer.builder("burst_attack_detection_duration")
                 .description("Time taken to detect burst attacks")
                 .register(meterRegistry);
@@ -247,6 +235,7 @@ public class RateLimitingMetricsService {
     /**
      * 전체 Rate Limiting 통계 조회 (3단계 제한 및 Burst Attack 지원)
      * 시스템 전체의 Rate Limiting 성능 지표를 집계하여 반환
+     * 태그가 있는 메트릭들의 합계를 계산하여 정확한 통계 제공
      * 
      * @return Rate Limiting 전체 통계 정보 (Burst Attack 포함)
      */
@@ -261,9 +250,18 @@ public class RateLimitingMetricsService {
         double totalErrors = errorCounter != null ? errorCounter.count() : 0.0; // 전체 처리 오류 횟수
         double totalRequests = totalHits + totalMisses; // 전체 처리된 요청 수
         
-        // Burst Attack 통계 추가
-        double totalBurstAttacks = burstAttackCounter.count();
-        double totalSecondHits = secondLimitHitCounter.count();
+        // 태그가 있는 메트릭들의 합계 계산 (정확한 통계를 위해)
+        double totalBurstAttacks = meterRegistry.find("rate_limit_burst_attacks_total")
+                .counters()
+                .stream()
+                .mapToDouble(Counter::count)
+                .sum();
+                
+        double totalSecondHits = meterRegistry.find("rate_limit_second_hits_total")
+                .counters()
+                .stream()
+                .mapToDouble(Counter::count)
+                .sum();
         
         // 전체 적중률 계산 (백분율)
         double hitRate = totalRequests > 0 ? (totalHits / totalRequests) * 100.0 : 0.0;
