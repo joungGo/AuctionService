@@ -193,18 +193,27 @@ cookie:
   same-site: Lax    # 로컬 환경에서 적절한 설정
   domain:           # 도메인 설정 없음
 
-# Rate Limiting 설정
+# Rate Limiting 설정 (3단계 Burst Protection)
 rate-limiting:
   enabled: ${RATE_LIMITING_ENABLED:true}  # 환경변수로 제어 가능
   
-  # 기본 IP 기반 제한
+  # 기본 IP 기반 제한 (Burst Attack 방지)
   default-ip-limit:
-    requests-per-minute: ${RATE_LIMIT_IP_PER_MINUTE:100}
-    requests-per-hour: ${RATE_LIMIT_IP_PER_HOUR:1000}
+    requests-per-second: ${RATE_LIMIT_IP_PER_SECOND:10}      # 초당 10회 (Burst 차단)
+    requests-per-minute: ${RATE_LIMIT_IP_PER_MINUTE:100}     # 분당 100회
+    requests-per-hour: ${RATE_LIMIT_IP_PER_HOUR:1000}        # 시간당 1000회
   
-  # 인증된 사용자 제한
+  # 인증된 사용자 제한 (더 관대한 제한)
   user-limit:
-    authenticated-user-requests-per-minute: ${RATE_LIMIT_USER_PER_MINUTE:500}
-    authenticated-user-requests-per-hour: ${RATE_LIMIT_USER_PER_HOUR:5000}
+    authenticated-user-requests-per-second: ${RATE_LIMIT_USER_PER_SECOND:20}    # 초당 20회
+    authenticated-user-requests-per-minute: ${RATE_LIMIT_USER_PER_MINUTE:500}   # 분당 500회
+    authenticated-user-requests-per-hour: ${RATE_LIMIT_USER_PER_HOUR:5000}      # 시간당 5000회
   
-  # API별 개별 제한 (코드에서 정의된 기본값 사용)
+  # Burst 방지 고급 설정
+  burst-protection:
+    enabled: ${BURST_PROTECTION_ENABLED:true}              # Burst 방지 활성화
+    strict-mode: ${BURST_STRICT_MODE:false}                # 엄격 모드 (더 낮은 임계값)
+    detection-window-seconds: ${BURST_DETECTION_WINDOW:5}  # Burst 감지 윈도우 (5초)
+  
+  # API별 개별 제한 (코드에서 정의된 3단계 제한 사용)
+  # 인증 API: 1-2회/초, 일반 API: 5-30회/초

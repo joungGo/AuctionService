@@ -35,18 +35,34 @@ public class RateLimitingService {
     private final RateLimitingMetricsService metricsService;
 
     /**
-     * IP 기반 요청 제한 검사
-     * 클라이언트 IP 주소를 기준으로 분당/시간당 요청 제한을 확인
+     * IP 기반 요청 제한 검사 (3단계: 초 → 분 → 시간)
+     * 클라이언트 IP 주소를 기준으로 초/분/시간당 요청 제한을 확인
      * 익명 사용자와 인증된 사용자 모두에게 적용되는 기본 제한
+     * Burst Attack 완전 차단을 위한 초 단위 제한 추가
      */
     public RateLimitResult checkIpLimit(String ipAddress) {
         if (!rateLimitingConfig.isEnabled()) {
             return RateLimitResult.allowed();
         }
 
-        /** @return: 반환 결과(RateLimitResult)가 반환되어야 한다 */
         try {
-            // 1단계: 분당 제한 검사 (단기간 급증 방지)
+            // 1단계: 초당 제한 검사 (최우선 - Burst Attack 완전 차단)
+            String secondKey = RateLimitKeyBuilder.buildIpKey(ipAddress, "second");
+            RateLimitResult secondResult = checkLimit(
+                secondKey,
+                () -> createIpBucketConfiguration(rateLimitingConfig.getDefaultIpLimit().getRequestsPerSecond(), // 기본: 10회
+                                                 rateLimitingConfig.getDefaultIpLimit().getWindowSizeSecond()) // 기본: 1초
+            );
+
+            // 초당 제한 초과 시 즉시 거부 (Burst Attack 방지)
+            if (!secondResult.isAllowed()) {
+                log.warn("[Rate Limiting] IP 초당 제한 초과 - IP: {}, 제한: {}회/초 (Burst Attack 감지)", 
+                        ipAddress, rateLimitingConfig.getDefaultIpLimit().getRequestsPerSecond());
+                metricsService.recordRateLimitHit("IP_SECOND", ipAddress, "second_limit");
+                return secondResult;
+            }
+
+            // 2단계: 분당 제한 검사 (단기간 급증 방지)
             String minuteKey = RateLimitKeyBuilder.buildIpKey(ipAddress, "minute");
             RateLimitResult minuteResult = checkLimit(
                 minuteKey,
@@ -58,11 +74,11 @@ public class RateLimitingService {
             if (!minuteResult.isAllowed()) {
                 log.warn("[Rate Limiting] IP 분당 제한 초과 - IP: {}, 제한: {}회/분", 
                         ipAddress, rateLimitingConfig.getDefaultIpLimit().getRequestsPerMinute());
-                metricsService.recordRateLimitHit("IP", ipAddress, "minute_limit");
+                metricsService.recordRateLimitHit("IP_MINUTE", ipAddress, "minute_limit");
                 return minuteResult;
             }
 
-            // 2단계: 시간당 제한 검사 (장기간 남용 방지)
+            // 3단계: 시간당 제한 검사 (장기간 남용 방지)
             String hourKey = RateLimitKeyBuilder.buildIpKey(ipAddress, "hour");
             RateLimitResult hourResult = checkLimit(
                 hourKey,
@@ -73,6 +89,7 @@ public class RateLimitingService {
             if (!hourResult.isAllowed()) {
                 log.warn("[Rate Limiting] IP 시간당 제한 초과 - IP: {}, 제한: {}회/시간", 
                         ipAddress, rateLimitingConfig.getDefaultIpLimit().getRequestsPerHour());
+                metricsService.recordRateLimitHit("IP_HOUR", ipAddress, "hour_limit");
             }
 
             return hourResult;
@@ -85,9 +102,10 @@ public class RateLimitingService {
     }
 
     /**
-     * 사용자 기반 요청 제한 검사
-     * 인증된 사용자의 UUID를 기준으로 분당/시간당 요청 제한을 확인
+     * 사용자 기반 요청 제한 검사 (3단계: 초 → 분 → 시간)
+     * 인증된 사용자의 UUID를 기준으로 초/분/시간당 요청 제한을 확인
      * IP 기반 제한보다 더 관대한 제한을 적용 (로그인한 사용자에게 혜택 제공)
+     * Burst Attack 방지를 위한 초 단위 제한 추가
      */
     public RateLimitResult checkUserLimit(String userUUID) {
         if (!rateLimitingConfig.isEnabled() || userUUID == null) {
@@ -95,7 +113,22 @@ public class RateLimitingService {
         }
 
         try {
-            // 분당 제한 검사
+            // 1단계: 초당 제한 검사 (Burst Attack 방지)
+            String secondKey = RateLimitKeyBuilder.buildUserKey(userUUID, "second");
+            RateLimitResult secondResult = checkLimit(
+                secondKey,
+                () -> createUserBucketConfiguration(rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerSecond(), // 20회
+                                                   rateLimitingConfig.getUserLimit().getWindowSizeSecond()) // 1초
+            );
+
+            if (!secondResult.isAllowed()) {
+                log.warn("[Rate Limiting] 사용자 초당 제한 초과 - User: {}, 제한: {}회/초 (Burst Attack 감지)", 
+                        userUUID, rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerSecond());
+                metricsService.recordRateLimitHit("USER_SECOND", userUUID, "second_limit");
+                return secondResult;
+            }
+
+            // 2단계: 분당 제한 검사
             String minuteKey = RateLimitKeyBuilder.buildUserKey(userUUID, "minute");
             RateLimitResult minuteResult = checkLimit(
                 minuteKey,
@@ -106,10 +139,11 @@ public class RateLimitingService {
             if (!minuteResult.isAllowed()) {
                 log.warn("[Rate Limiting] 사용자 분당 제한 초과 - User: {}, 제한: {}회/분", 
                         userUUID, rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerMinute());
+                metricsService.recordRateLimitHit("USER_MINUTE", userUUID, "minute_limit");
                 return minuteResult;
             }
 
-            // 시간당 제한 검사
+            // 3단계: 시간당 제한 검사
             String hourKey = RateLimitKeyBuilder.buildUserKey(userUUID, "hour");
             RateLimitResult hourResult = checkLimit(
                 hourKey,
@@ -120,6 +154,7 @@ public class RateLimitingService {
             if (!hourResult.isAllowed()) {
                 log.warn("[Rate Limiting] 사용자 시간당 제한 초과 - User: {}, 제한: {}회/시간", 
                         userUUID, rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerHour());
+                metricsService.recordRateLimitHit("USER_HOUR", userUUID, "hour_limit");
             }
 
             return hourResult;
@@ -131,7 +166,9 @@ public class RateLimitingService {
     }
 
     /**
-     * API별 요청 제한 검사
+     * API별 요청 제한 검사 (3단계: 초 → 분 → 시간)
+     * 특정 API 엔드포인트에 대한 초/분/시간당 세밀한 제한 적용
+     * Burst Attack 완전 차단을 위한 초 단위 제한 추가
      */
     public RateLimitResult checkApiLimit(String apiPath, String identifier) {
         if (!rateLimitingConfig.isEnabled()) {
@@ -144,7 +181,21 @@ public class RateLimitingService {
         }
 
         try {
-            // 분당 제한 검사
+            // 1단계: 초당 제한 검사 (최우선 - Burst Attack 완전 차단)
+            String secondKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "second");
+            RateLimitResult secondResult = checkLimit(
+                secondKey,
+                () -> createApiBucketConfiguration(apiLimit.getRequestsPerSecond(), apiLimit.getWindowSizeSecond())
+            );
+
+            if (!secondResult.isAllowed()) {
+                log.warn("[Rate Limiting] API 초당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/초 (Burst Attack 감지)", 
+                        apiPath, identifier, apiLimit.getRequestsPerSecond());
+                metricsService.recordRateLimitHit("API_SECOND", identifier, apiPath);
+                return secondResult;
+            }
+
+            // 2단계: 분당 제한 검사
             String minuteKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "minute");
             RateLimitResult minuteResult = checkLimit(
                 minuteKey,
@@ -154,10 +205,11 @@ public class RateLimitingService {
             if (!minuteResult.isAllowed()) {
                 log.warn("[Rate Limiting] API 분당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/분", 
                         apiPath, identifier, apiLimit.getRequestsPerMinute());
+                metricsService.recordRateLimitHit("API_MINUTE", identifier, apiPath);
                 return minuteResult;
             }
 
-            // 시간당 제한 검사
+            // 3단계: 시간당 제한 검사
             String hourKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "hour");
             RateLimitResult hourResult = checkLimit(
                 hourKey,
@@ -167,6 +219,7 @@ public class RateLimitingService {
             if (!hourResult.isAllowed()) {
                 log.warn("[Rate Limiting] API 시간당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/시간", 
                         apiPath, identifier, apiLimit.getRequestsPerHour());
+                metricsService.recordRateLimitHit("API_HOUR", identifier, apiPath);
             }
 
             return hourResult;

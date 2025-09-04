@@ -32,32 +32,67 @@ public class RateLimitingMetricsService {
     /** API별 전체 요청 횟수 (스레드 안전) */
     private final ConcurrentHashMap<String, AtomicLong> apiRequestCounts = new ConcurrentHashMap<>();
 
+    // 초 단위 Burst Attack 감지를 위한 전용 메트릭
+    private Counter burstAttackCounter;
+    private Counter secondLimitHitCounter;
+    private Timer burstDetectionTimer;
+
     /**
      * 애플리케이션 시작 시 Prometheus 메트릭 초기화
      * Spring Bean 생성 후 자동 실행되어 모든 메트릭 카운터와 타이머를 등록
+     * 3단계 Rate Limiting(초/분/시간) 및 Burst Attack 감지 메트릭 추가
      */
     @PostConstruct
     public void initializeMetrics() {
-        log.info("[Rate Limiting Metrics] 메트릭 초기화 완료");
+        // Burst Attack 감지 카운터
+        burstAttackCounter = Counter.builder("rate_limit_burst_attacks_total")
+                .description("Total number of detected burst attacks")
+                .register(meterRegistry);
+
+        // 초 단위 제한 적중 카운터
+        secondLimitHitCounter = Counter.builder("rate_limit_second_hits_total")
+                .description("Total number of second-level rate limit hits")
+                .register(meterRegistry);
+
+        // Burst 감지 성능 타이머
+        burstDetectionTimer = Timer.builder("burst_attack_detection_duration")
+                .description("Time taken to detect burst attacks")
+                .register(meterRegistry);
+
+        log.info("[Rate Limiting Metrics] 3단계 Rate Limiting 및 Burst Protection 메트릭 초기화 완료");
     }
 
     /**
-     * Rate Limit 적중 기록
+     * Rate Limit 적중 기록 (3단계 제한 지원)
      * 요청이 Rate Limiting에 걸렸을 때 호출되어 메트릭을 업데이트
+     * 초/분/시간 단위 제한을 구분하여 메트릭 수집
      * 
-     * @param limitType 제한 타입 (IP, USER, API 등)
+     * @param limitType 제한 타입 (IP_SECOND, IP_MINUTE, IP_HOUR, USER_SECOND, API_SECOND 등)
      * @param identifier 제한 대상 식별자 (IP 주소, 사용자 ID 등)
      * @param apiPath 요청된 API 경로
      */
     public void recordRateLimitHit(String limitType, String identifier, String apiPath) {
         try {
-            // 태그와 함께 카운터 생성 및 증가
+            // 기본 Rate Limit 적중 메트릭
             Counter.builder("rate_limit_hits_total")
                     .description("Total number of rate limit hits")
                     .tag("type", limitType) // 제한 타입 태그
                     .tag("api", sanitizeApiPath(apiPath)) // API 경로 태그
                     .register(meterRegistry)
                     .increment();
+
+            // 초 단위 제한 적중 시 전용 메트릭 추가
+            if (limitType.endsWith("_SECOND")) {
+                Counter.builder("rate_limit_second_hits_total")
+                        .description("Total number of second-level rate limit hits")
+                        .tag("type", limitType.replace("_SECOND", ""))
+                        .tag("api", sanitizeApiPath(apiPath))
+                        .register(meterRegistry)
+                        .increment();
+                
+                // Burst Attack 감지 메트릭
+                recordBurstAttack(limitType, identifier, apiPath);
+            }
 
             // API별 적중률 추적을 위한 인메모리 카운터 업데이트
             String key = sanitizeApiPath(apiPath);
@@ -181,10 +216,39 @@ public class RateLimitingMetricsService {
     }
 
     /**
-     * 전체 Rate Limiting 통계 조회
+     * Burst Attack 감지 및 기록
+     * 초 단위 Rate Limiting에 걸렸을 때 Burst Attack으로 분류하여 메트릭 수집
+     * 
+     * @param attackType 공격 타입 (IP_SECOND, USER_SECOND, API_SECOND 등)
+     * @param identifier 공격자 식별자
+     * @param apiPath 공격 대상 API
+     */
+    public void recordBurstAttack(String attackType, String identifier, String apiPath) {
+        try {
+            Timer.Sample sample = Timer.start(meterRegistry);
+            
+            Counter.builder("rate_limit_burst_attacks_total")
+                    .description("Total number of detected burst attacks")
+                    .tag("attack_type", attackType)
+                    .tag("api", sanitizeApiPath(apiPath))
+                    .register(meterRegistry)
+                    .increment();
+            
+            sample.stop(burstDetectionTimer);
+            
+            log.warn("[Burst Attack Detected] 타입: {}, 식별자: {}, API: {} - 초 단위 제한 초과로 Burst Attack 감지", 
+                    attackType, identifier, apiPath);
+
+        } catch (Exception e) {
+            log.error("[Rate Limiting Metrics] Burst Attack 메트릭 기록 실패: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 전체 Rate Limiting 통계 조회 (3단계 제한 및 Burst Attack 지원)
      * 시스템 전체의 Rate Limiting 성능 지표를 집계하여 반환
      * 
-     * @return Rate Limiting 전체 통계 정보
+     * @return Rate Limiting 전체 통계 정보 (Burst Attack 포함)
      */
     public RateLimitingStats getOverallStats() {
         // 레지스트리에서 카운터 조회
@@ -197,10 +261,14 @@ public class RateLimitingMetricsService {
         double totalErrors = errorCounter != null ? errorCounter.count() : 0.0; // 전체 처리 오류 횟수
         double totalRequests = totalHits + totalMisses; // 전체 처리된 요청 수
         
+        // Burst Attack 통계 추가
+        double totalBurstAttacks = burstAttackCounter.count();
+        double totalSecondHits = secondLimitHitCounter.count();
+        
         // 전체 적중률 계산 (백분율)
         double hitRate = totalRequests > 0 ? (totalHits / totalRequests) * 100.0 : 0.0;
         
-        return new RateLimitingStats(totalHits, totalMisses, totalErrors, hitRate);
+        return new RateLimitingStats(totalHits, totalMisses, totalErrors, hitRate, totalBurstAttacks, totalSecondHits);
     }
 
     /**
@@ -224,7 +292,7 @@ public class RateLimitingMetricsService {
     }
 
     /**
-     * Rate Limiting 통계 데이터 클래스
+     * Rate Limiting 통계 데이터 클래스 (3단계 제한 및 Burst Attack 지원)
      * 시스템 전체의 Rate Limiting 성능 지표를 담는 불변 객체
      */
     public static class RateLimitingStats {
@@ -239,9 +307,15 @@ public class RateLimitingMetricsService {
         
         /** 전체 적중률 (백분율) */
         private final double hitRate;
+        
+        /** 전체 Burst Attack 감지 횟수 */
+        private final double totalBurstAttacks;
+        
+        /** 전체 초 단위 제한 적중 횟수 */
+        private final double totalSecondHits;
 
         /**
-         * Rate Limiting 통계 생성자
+         * Rate Limiting 통계 생성자 (기존 호환성)
          * 
          * @param totalHits 전체 Rate Limit 적중 횟수
          * @param totalMisses 전체 Rate Limit 통과 횟수
@@ -249,10 +323,27 @@ public class RateLimitingMetricsService {
          * @param hitRate 전체 적중률 (백분율)
          */
         public RateLimitingStats(double totalHits, double totalMisses, double totalErrors, double hitRate) {
+            this(totalHits, totalMisses, totalErrors, hitRate, 0.0, 0.0);
+        }
+
+        /**
+         * Rate Limiting 통계 생성자 (3단계 제한 및 Burst Attack 지원)
+         * 
+         * @param totalHits 전체 Rate Limit 적중 횟수
+         * @param totalMisses 전체 Rate Limit 통과 횟수
+         * @param totalErrors 전체 처리 오류 횟수
+         * @param hitRate 전체 적중률 (백분율)
+         * @param totalBurstAttacks 전체 Burst Attack 감지 횟수
+         * @param totalSecondHits 전체 초 단위 제한 적중 횟수
+         */
+        public RateLimitingStats(double totalHits, double totalMisses, double totalErrors, double hitRate, 
+                               double totalBurstAttacks, double totalSecondHits) {
             this.totalHits = totalHits;
             this.totalMisses = totalMisses;
             this.totalErrors = totalErrors;
             this.hitRate = hitRate;
+            this.totalBurstAttacks = totalBurstAttacks;
+            this.totalSecondHits = totalSecondHits;
         }
 
         /** @return 전체 Rate Limit 적중 횟수 */
@@ -267,8 +358,19 @@ public class RateLimitingMetricsService {
         /** @return 전체 적중률 (백분율) */
         public double getHitRate() { return hitRate; }
         
+        /** @return 전체 Burst Attack 감지 횟수 */
+        public double getTotalBurstAttacks() { return totalBurstAttacks; }
+        
+        /** @return 전체 초 단위 제한 적중 횟수 */
+        public double getTotalSecondHits() { return totalSecondHits; }
+        
         /** @return 전체 처리된 요청 수 (적중 + 통과) */
         public double getTotalRequests() { return totalHits + totalMisses; }
+        
+        /** @return Burst Attack 비율 (백분율) */
+        public double getBurstAttackRate() {
+            return totalSecondHits > 0 ? (totalBurstAttacks / totalSecondHits) * 100.0 : 0.0;
+        }
 
         /**
          * 통계 정보의 문자열 표현
@@ -276,8 +378,10 @@ public class RateLimitingMetricsService {
          */
         @Override
         public String toString() {
-            return String.format("RateLimitingStats{hits=%.0f, misses=%.0f, errors=%.0f, hitRate=%.2f%%}", 
-                    totalHits, totalMisses, totalErrors, hitRate);
+            return String.format("RateLimitingStats{hits=%.0f, misses=%.0f, errors=%.0f, hitRate=%.2f%%, " +
+                               "burstAttacks=%.0f, secondHits=%.0f, burstRate=%.2f%%}", 
+                    totalHits, totalMisses, totalErrors, hitRate, 
+                    totalBurstAttacks, totalSecondHits, getBurstAttackRate());
         }
     }
 }

@@ -52,44 +52,98 @@ public class RateLimitingConfig {
      * 기본 제한 정책 초기화
      * 애플리케이션 시작 시 각 API별 기본 Rate Limiting 정책을 설정
      * 보안 수준에 따라 엄격함 정도를 차등 적용
+     * 3단계 제한 (초/분/시간) 적용으로 Burst Attack 완전 방지
      */
     private void initializeDefaultLimits() {
-        // 기본 IP 제한: 100회/분, 1000회/시간 (익명 사용자 대상)
-        defaultIpLimit.setRequestsPerHour(1000);
+        // 기본 IP 제한: 10회/초, 100회/분, 1000회/시간 (익명 사용자 대상)
+        defaultIpLimit.setRequestsPerSecond(10);   // Burst Attack 방지
         defaultIpLimit.setRequestsPerMinute(100);
+        defaultIpLimit.setRequestsPerHour(1000);
 
-        // 인증 관련 API 제한 (엄격) - 브루트포스 공격 방지
-        apiLimits.put("/api/auth/login", new ApiLimit(5, 20, Duration.ofMinutes(1), Duration.ofHours(1))); // 로그인 시도 제한
-        apiLimits.put("/api/auth/signup", new ApiLimit(3, 10, Duration.ofMinutes(1), Duration.ofHours(1))); // 회원가입 남용 방지
-        apiLimits.put("/api/auth/send-code", new ApiLimit(3, 5, Duration.ofMinutes(1), Duration.ofHours(1))); // 이메일 인증 스팸 방지
+        // 인증 관련 API 제한 (매우 엄격) - 브루트포스 공격 완전 차단
+        apiLimits.put("/api/auth/login", new ApiLimit(
+            2,   // 초당 2회 (Burst 완전 차단)
+            5,   // 분당 5회
+            20,  // 시간당 20회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
+        
+        apiLimits.put("/api/auth/signup", new ApiLimit(
+            1,   // 초당 1회 (매우 엄격)
+            3,   // 분당 3회
+            10,  // 시간당 10회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
+        
+        apiLimits.put("/api/auth/send-code", new ApiLimit(
+            1,   // 초당 1회 (이메일 스팸 완전 차단)
+            3,   // 분당 3회
+            5,   // 시간당 5회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
 
         // 입찰 관련 API 제한 (중간) - 경매 시스템 안정성 확보
-        apiLimits.put("/api/bids/**", new ApiLimit(30, 200, Duration.ofMinutes(1), Duration.ofHours(1))); // 입찰 관련 전체
-        apiLimits.put("/api/auctions/*/bids", new ApiLimit(50, 300, Duration.ofMinutes(1), Duration.ofHours(1))); // 입찰 내역 조회
+        apiLimits.put("/api/bids/**", new ApiLimit(
+            5,   // 초당 5회
+            30,  // 분당 30회
+            200, // 시간당 200회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
+        
+        apiLimits.put("/api/auctions/*/bids", new ApiLimit(
+            10,  // 초당 10회 (조회는 좀 더 관대)
+            50,  // 분당 50회
+            300, // 시간당 300회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
 
         // 일반 조회 API 제한 (완화) - 사용자 편의성 고려
-        apiLimits.put("/api/auctions", new ApiLimit(200, 2000, Duration.ofMinutes(1), Duration.ofHours(1))); // 경매 목록 조회
-        apiLimits.put("/api/auctions/*", new ApiLimit(300, 3000, Duration.ofMinutes(1), Duration.ofHours(1))); // 경매 상세 조회
+        apiLimits.put("/api/auctions", new ApiLimit(
+            20,   // 초당 20회
+            200,  // 분당 200회
+            2000, // 시간당 2000회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
+        
+        apiLimits.put("/api/auctions/*", new ApiLimit(
+            30,   // 초당 30회
+            300,  // 분당 300회
+            3000, // 시간당 3000회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
 
         // 관리자 API 제한 - 관리 기능 남용 방지
-        apiLimits.put("/api/admin/**", new ApiLimit(100, 500, Duration.ofMinutes(1), Duration.ofHours(1)));
+        apiLimits.put("/api/admin/**", new ApiLimit(
+            10,  // 초당 10회
+            100, // 분당 100회
+            500, // 시간당 500회
+            Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
+        ));
 
         // 사용자별 제한 설정 - 인증된 사용자에게 더 관대한 제한
-        userLimit.setAuthenticatedUserRequestsPerMinute(500); // 분당 500회
-        userLimit.setAuthenticatedUserRequestsPerHour(5000); // 시간당 5000회
+        userLimit.setAuthenticatedUserRequestsPerSecond(20);   // 초당 20회
+        userLimit.setAuthenticatedUserRequestsPerMinute(500);  // 분당 500회
+        userLimit.setAuthenticatedUserRequestsPerHour(5000);   // 시간당 5000회
     }
 
     /**
      * IP 기반 Rate Limiting 설정 클래스
      * 클라이언트 IP 주소를 기준으로 한 요청 제한 정책
+     * 3단계 제한: 초 → 분 → 시간 (Burst Attack 방지)
      */
     @Data
     public static class IpBasedLimit {
+        /** 초당 허용 요청 수 (Burst Attack 방지) */
+        private int requestsPerSecond = 10;
+        
         /** 분당 허용 요청 수 */
         private int requestsPerMinute = 100;
         
         /** 시간당 허용 요청 수 */
         private int requestsPerHour = 1000;
+        
+        /** 초 단위 시간 윈도우 크기 */
+        private Duration windowSizeSecond = Duration.ofSeconds(1);
         
         /** 분 단위 시간 윈도우 크기 */
         private Duration windowSizeMinute = Duration.ofMinutes(1);
@@ -101,14 +155,21 @@ public class RateLimitingConfig {
     /**
      * API별 Rate Limiting 설정 클래스
      * 특정 API 엔드포인트에 대한 개별적인 제한 정책
+     * 3단계 제한: 초 → 분 → 시간 (Burst Attack 방지)
      */
     @Data
     public static class ApiLimit {
+        /** 초당 허용 요청 수 (Burst Attack 방지) */
+        private int requestsPerSecond;
+        
         /** 분당 허용 요청 수 */
         private int requestsPerMinute;
         
         /** 시간당 허용 요청 수 */
         private int requestsPerHour;
+        
+        /** 초 단위 시간 윈도우 크기 */
+        private Duration windowSizeSecond = Duration.ofSeconds(1);
         
         /** 분 단위 시간 윈도우 크기 */
         private Duration windowSizeMinute;
@@ -120,7 +181,28 @@ public class RateLimitingConfig {
         private boolean enabled = true;
 
         /**
-         * API 제한 설정 생성자
+         * API 제한 설정 생성자 (3단계 제한)
+         * 
+         * @param requestsPerSecond 초당 허용 요청 수
+         * @param requestsPerMinute 분당 허용 요청 수
+         * @param requestsPerHour 시간당 허용 요청 수
+         * @param windowSizeSecond 초 단위 윈도우 크기
+         * @param windowSizeMinute 분 단위 윈도우 크기
+         * @param windowSizeHour 시간 단위 윈도우 크기
+         */
+        public ApiLimit(int requestsPerSecond, int requestsPerMinute, int requestsPerHour, 
+                       Duration windowSizeSecond, Duration windowSizeMinute, Duration windowSizeHour) {
+            this.requestsPerSecond = requestsPerSecond;
+            this.requestsPerMinute = requestsPerMinute;
+            this.requestsPerHour = requestsPerHour;
+            this.windowSizeSecond = windowSizeSecond;
+            this.windowSizeMinute = windowSizeMinute;
+            this.windowSizeHour = windowSizeHour;
+        }
+
+        /**
+         * API 제한 설정 생성자 (기존 호환성)
+         * 초 단위 제한은 기본값(5초) 적용
          * 
          * @param requestsPerMinute 분당 허용 요청 수
          * @param requestsPerHour 시간당 허용 요청 수
@@ -128,8 +210,10 @@ public class RateLimitingConfig {
          * @param windowSizeHour 시간 단위 윈도우 크기
          */
         public ApiLimit(int requestsPerMinute, int requestsPerHour, Duration windowSizeMinute, Duration windowSizeHour) {
+            this.requestsPerSecond = 5; // 기본값: 초당 5회
             this.requestsPerMinute = requestsPerMinute;
             this.requestsPerHour = requestsPerHour;
+            this.windowSizeSecond = Duration.ofSeconds(1);
             this.windowSizeMinute = windowSizeMinute;
             this.windowSizeHour = windowSizeHour;
         }
@@ -138,14 +222,21 @@ public class RateLimitingConfig {
     /**
      * 사용자 기반 Rate Limiting 설정 클래스
      * 인증된 사용자에 대한 요청 제한 정책
+     * 3단계 제한: 초 → 분 → 시간 (인증된 사용자에게 더 관대한 제한)
      */
     @Data
     public static class UserBasedLimit {
+        /** 인증된 사용자의 초당 허용 요청 수 */
+        private int authenticatedUserRequestsPerSecond = 20;
+        
         /** 인증된 사용자의 분당 허용 요청 수 */
         private int authenticatedUserRequestsPerMinute = 500;
         
         /** 인증된 사용자의 시간당 허용 요청 수 */
         private int authenticatedUserRequestsPerHour = 5000;
+        
+        /** 초 단위 시간 윈도우 크기 */
+        private Duration windowSizeSecond = Duration.ofSeconds(1);
         
         /** 분 단위 시간 윈도우 크기 */
         private Duration windowSizeMinute = Duration.ofMinutes(1);
