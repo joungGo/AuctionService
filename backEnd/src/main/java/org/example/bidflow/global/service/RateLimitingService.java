@@ -172,13 +172,20 @@ public class RateLimitingService {
      */
     public RateLimitResult checkApiLimit(String apiPath, String identifier) {
         if (!rateLimitingConfig.isEnabled()) {
+            log.debug("[Rate Limiting] Rate Limiting이 비활성화되어 있습니다.");
             return RateLimitResult.allowed();
         }
 
         RateLimitingConfig.ApiLimit apiLimit = rateLimitingConfig.getApiLimit(apiPath);
+        log.debug("[Rate Limiting] API 경로: {}, 매칭된 제한 설정: {}", apiPath, apiLimit != null ? "있음" : "없음");
+        
         if (apiLimit == null || !apiLimit.isEnabled()) {
+            log.debug("[Rate Limiting] API별 제한 설정이 없거나 비활성화됨 - 기본 제한 적용");
             return RateLimitResult.allowed();
         }
+        
+        log.info("[Rate Limiting] API별 제한 적용 - API: {}, 식별자: {}, 제한: {}회/분", 
+                apiPath, identifier, apiLimit.getRequestsPerMinute());
 
         try {
             // 1단계: 초당 제한 검사 (최우선 - Burst Attack 완전 차단)

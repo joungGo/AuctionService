@@ -1,6 +1,7 @@
 package org.example.bidflow.global.config;
 
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -12,6 +13,7 @@ import java.util.HashMap;
  * Rate Limiting 설정 클래스
  * API별, 사용자별 요청 제한 정책을 정의합니다.
  */
+@Slf4j
 @Data
 @Configuration
 @ConfigurationProperties(prefix = "rate-limiting")
@@ -63,7 +65,7 @@ public class RateLimitingConfig {
         // 인증 관련 API 제한 (매우 엄격) - 브루트포스 공격 완전 차단
         apiLimits.put("/api/auth/login", new ApiLimit(
             2,   // 초당 2회 (Burst 완전 차단)
-            5,   // 분당 5회
+            5,   // 분당 5회 ← 이 제한이 적용되어야 함
             20,  // 시간당 20회
             Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
         ));
@@ -92,7 +94,7 @@ public class RateLimitingConfig {
         
         apiLimits.put("/api/auctions/*/bids", new ApiLimit(
             10,  // 초당 10회 (조회는 좀 더 관대)
-            50,  // 분당 50회
+            50,  // 분당 50회 ← k6 테스트에서 확인할 제한
             300, // 시간당 300회
             Duration.ofSeconds(1), Duration.ofMinutes(1), Duration.ofHours(1)
         ));
@@ -253,9 +255,13 @@ public class RateLimitingConfig {
      * @return 해당 API에 적용될 제한 설정, 없으면 null (기본 제한 적용)
      */
     public ApiLimit getApiLimit(String apiPath) {
+        log.debug("[Rate Limiting Config] API 경로 제한 조회 - 경로: {}", apiPath);
+        
         // 정확한 매칭 우선 (예: /api/auth/login)
         if (apiLimits.containsKey(apiPath)) {
-            return apiLimits.get(apiPath);
+            ApiLimit limit = apiLimits.get(apiPath);
+            log.info("[Rate Limiting Config] 정확한 매칭 발견 - 경로: {}, 제한: {}회/분", apiPath, limit.getRequestsPerMinute());
+            return limit;
         }
 
         // 패턴 매칭 (와일드카드 지원)
@@ -263,14 +269,19 @@ public class RateLimitingConfig {
             String pattern = entry.getKey();
             // 패턴 매칭 (예: /api/auth/** → /api/auth/login)
             if (pattern.endsWith("/**") && apiPath.startsWith(pattern.substring(0, pattern.length() - 3))) {
+                log.info("[Rate Limiting Config] 와일드카드 매칭 발견 - 경로: {}, 패턴: {}, 제한: {}회/분", 
+                        apiPath, pattern, entry.getValue().getRequestsPerMinute());
                 return entry.getValue();
             }
             // 단일 * 패턴 매칭 (예: /api/auctions/* → /api/auctions/123)
             if (pattern.contains("*") && matchesWildcard(apiPath, pattern)) {
+                log.info("[Rate Limiting Config] 패턴 매칭 발견 - 경로: {}, 패턴: {}, 제한: {}회/분", 
+                        apiPath, pattern, entry.getValue().getRequestsPerMinute());
                 return entry.getValue();
             }
         }
 
+        log.debug("[Rate Limiting Config] 매칭되는 API 제한 설정 없음 - 경로: {}", apiPath);
         return null; // 매칭되는 패턴이 없으면 null 반환 (기본 제한 적용)
     }
 

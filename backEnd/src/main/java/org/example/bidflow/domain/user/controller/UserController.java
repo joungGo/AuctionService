@@ -22,9 +22,6 @@ import java.util.Map;
 import org.example.bidflow.domain.user.dto.UserAuctionHistoryResponse;
 import org.example.bidflow.domain.user.dto.FavoriteResponse;
 import org.example.bidflow.domain.user.service.FavoriteService;
-import org.example.bidflow.global.annotation.RateLimit;
-
-import java.time.temporal.ChronoUnit;
 
 @RequiredArgsConstructor
 @RestController
@@ -41,9 +38,6 @@ public class UserController {
 
     // 회원가입
     @PostMapping("/signup")
-    @RateLimit(requests = 3, window = 1, unit = ChronoUnit.MINUTES, 
-               keyType = RateLimit.KeyType.IP_ONLY,
-               message = "회원가입 요청이 너무 많습니다. 1분 후 다시 시도해주세요.")
     public ResponseEntity<RsData<UserSignUpResponse>> signup(@Valid @RequestBody UserSignUpRequest request) {
 
         UserSignUpResponse response = userService.signup(request);
@@ -56,9 +50,6 @@ public class UserController {
 
 
     @PostMapping("/login")
-    @RateLimit(requests = 5, window = 1, unit = ChronoUnit.MINUTES,
-               keyType = RateLimit.KeyType.IP_ONLY,
-               message = "로그인 시도가 너무 많습니다. 1분 후 다시 시도해주세요.")
     public ResponseEntity<RsData<UserSignInResponse>> signin(@Valid @RequestBody UserSignInRequest request,
                                                               HttpServletResponse response) {
 
@@ -177,9 +168,6 @@ public class UserController {
     }
 
     @PostMapping("/send-code")
-    @RateLimit(requests = 3, window = 1, unit = ChronoUnit.MINUTES,
-               keyType = RateLimit.KeyType.IP_ONLY,
-               message = "이메일 인증 요청이 너무 많습니다. 1분 후 다시 시도해주세요.")
     public ResponseEntity<RsData> sendVerticationCode(@RequestBody @Valid EmailSendRequest request)
     {
         log.error("Request to send verification code failed: {}", request);
