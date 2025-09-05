@@ -25,9 +25,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.example.bidflow.global.exception.ServiceException;
-import org.example.bidflow.global.annotation.RateLimit;
-
-import java.time.temporal.ChronoUnit;
 
 @Slf4j
 @RestController
@@ -106,9 +103,6 @@ public class BidController {
 
     // 특정 경매의 입찰 내역 조회 API
     @GetMapping("/{auctionId}/bids")
-    @RateLimit(requests = 50, window = 1, unit = ChronoUnit.MINUTES,
-               keyType = RateLimit.KeyType.IP_AND_USER,
-               message = "입찰 내역 조회 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.")
     public ResponseEntity<RsData<List<BidHistoryResponse>>> getBidHistoryByAuction(@PathVariable Long auctionId) {
         log.info("[REST API] 경매 입찰 내역 조회 요청 - 경매ID: {}", auctionId);
         

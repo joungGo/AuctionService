@@ -112,6 +112,11 @@ logging:
     org.example.bidflow.domain.auction.service: DEBUG
     org.example.bidflow.global.app: INFO
     
+    # Rate Limiting 로깅 (디버깅용)
+    org.example.bidflow.global.service.RateLimitingService: DEBUG
+    org.example.bidflow.global.config.RateLimitingConfig: DEBUG
+    org.example.bidflow.global.filter.RateLimitingFilter: DEBUG
+    
     # Spring Security 디버깅
     org.springframework.security: DEBUG
     org.springframework.web.filter: DEBUG
