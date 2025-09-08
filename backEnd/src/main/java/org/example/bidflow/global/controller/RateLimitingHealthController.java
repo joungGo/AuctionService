@@ -3,8 +3,6 @@ package org.example.bidflow.global.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.global.config.RateLimitingConfig;
-import org.example.bidflow.global.service.RateLimitingMetricsService;
-import org.example.bidflow.global.service.RateLimitingMetricsService.RateLimitingStats;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.http.ResponseEntity;
@@ -27,9 +25,6 @@ public class RateLimitingHealthController implements HealthIndicator {
 
     /** Rate Limiting 설정 정보 - 현재 적용된 제한 정책 조회용 */
     private final RateLimitingConfig rateLimitingConfig;
-    
-    /** Rate Limiting 메트릭 서비스 - 통계 및 성능 정보 조회용 */
-    private final RateLimitingMetricsService metricsService;
 
     /**
      * Rate Limiting 전체 상태 조회
@@ -48,31 +43,8 @@ public class RateLimitingHealthController implements HealthIndicator {
             status.put("defaultIpLimit", rateLimitingConfig.getDefaultIpLimit());
             status.put("userLimit", rateLimitingConfig.getUserLimit());
             
-            // 실시간 통계 정보 (Prometheus 메트릭 기반)
-            RateLimitingStats stats = metricsService.getOverallStats();
-            status.put("statistics", Map.of(
-                "totalRequests", stats.getTotalRequests(), // 전체 요청 수
-                "totalHits", stats.getTotalHits(), // Rate Limit 적중 수
-                "totalMisses", stats.getTotalMisses(), // Rate Limit 통과 수
-                "totalErrors", stats.getTotalErrors(), // 처리 오류 수
-                "hitRate", String.format("%.2f%%", stats.getHitRate()) // 적중률 (백분율)
-            ));
-            
-            // 주요 API별 적중률 분석 (모니터링 대상 API들)
-            Map<String, String> apiHitRates = new HashMap<>();
-            String[] monitoredApis = {
-                "/api/auth/login", "/api/auth/signup", "/api/auth/send-code", // 인증 관련 API
-                "/api/auctions", "/api/admin/auctions" // 핵심 비즈니스 API
-            };
-            
-            for (String api : monitoredApis) {
-                double hitRate = metricsService.getApiHitRate(api);
-                apiHitRates.put(api, String.format("%.2f%%", hitRate));
-            }
-            status.put("apiHitRates", apiHitRates);
-            
-            log.debug("[Rate Limiting Health] 상태 조회 완료 - 활성화: {}, 전체 적중률: {}", 
-                    rateLimitingConfig.isEnabled(), stats.getHitRate());
+            log.debug("[Rate Limiting Health] 상태 조회 완료 - 활성화: {}", 
+                    rateLimitingConfig.isEnabled());
             
             return ResponseEntity.ok(status);
             
@@ -136,37 +108,9 @@ public class RateLimitingHealthController implements HealthIndicator {
                         .build();
             }
 
-            RateLimitingStats stats = metricsService.getOverallStats();
-            
-            // 적중률이 너무 높으면 경고 상태 (과도한 요청 차단 중)
-            if (stats.getHitRate() > 50.0) {
-                return Health.down()
-                        .withDetail("status", "high_hit_rate")
-                        .withDetail("hitRate", String.format("%.2f%%", stats.getHitRate()))
-                        .withDetail("message", "Rate Limiting 적중률이 높습니다. 설정 검토가 필요할 수 있습니다.")
-                        .withDetail("totalRequests", stats.getTotalRequests())
-                        .withDetail("totalHits", stats.getTotalHits())
-                        .withDetail("recommendation", "API 제한 설정을 완화하거나 DDoS 공격 여부를 확인하세요.")
-                        .build();
-            }
-
-            // 처리 오류가 많으면 경고 상태 (시스템 문제 가능성)
-            if (stats.getTotalErrors() > 100) {
-                return Health.down()
-                        .withDetail("status", "high_error_rate")
-                        .withDetail("totalErrors", stats.getTotalErrors())
-                        .withDetail("message", "Rate Limiting 처리 오류가 많이 발생하고 있습니다.")
-                        .withDetail("recommendation", "Redis 연결 상태나 시스템 리소스를 확인하세요.")
-                        .build();
-            }
-
-            // 정상 상태 (모든 지표가 양호)
             return Health.up()
                     .withDetail("status", "healthy")
-                    .withDetail("hitRate", String.format("%.2f%%", stats.getHitRate()))
-                    .withDetail("totalRequests", stats.getTotalRequests())
-                    .withDetail("totalErrors", stats.getTotalErrors())
-                    .withDetail("message", "Rate Limiting이 정상적으로 작동하고 있습니다.")
+                    .withDetail("message", "Rate Limiting 설정만 확인됨 (메트릭 비활성화)")
                     .build();
 
         } catch (Exception e) {
