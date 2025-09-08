@@ -31,8 +31,6 @@ public class RateLimitingService {
     /** Rate Limiting 설정 - 제한 정책 및 임계값 관리 */
     private final RateLimitingConfig rateLimitingConfig;
     
-    /** Rate Limiting 메트릭 서비스 - 성능 지표 수집 및 모니터링 */
-    private final RateLimitingMetricsService metricsService;
 
     /**
      * IP 기반 요청 제한 검사 (3단계: 초 → 분 → 시간)
@@ -58,7 +56,6 @@ public class RateLimitingService {
             if (!secondResult.isAllowed()) {
                 log.warn("[Rate Limiting] IP 초당 제한 초과 - IP: {}, 제한: {}회/초 (Burst Attack 감지)", 
                         ipAddress, rateLimitingConfig.getDefaultIpLimit().getRequestsPerSecond());
-                metricsService.recordRateLimitHit("IP_SECOND", ipAddress, "second_limit");
                 return secondResult;
             }
 
@@ -74,7 +71,6 @@ public class RateLimitingService {
             if (!minuteResult.isAllowed()) {
                 log.warn("[Rate Limiting] IP 분당 제한 초과 - IP: {}, 제한: {}회/분", 
                         ipAddress, rateLimitingConfig.getDefaultIpLimit().getRequestsPerMinute());
-                metricsService.recordRateLimitHit("IP_MINUTE", ipAddress, "minute_limit");
                 return minuteResult;
             }
 
@@ -89,7 +85,6 @@ public class RateLimitingService {
             if (!hourResult.isAllowed()) {
                 log.warn("[Rate Limiting] IP 시간당 제한 초과 - IP: {}, 제한: {}회/시간", 
                         ipAddress, rateLimitingConfig.getDefaultIpLimit().getRequestsPerHour());
-                metricsService.recordRateLimitHit("IP_HOUR", ipAddress, "hour_limit");
             }
 
             return hourResult;
@@ -124,7 +119,6 @@ public class RateLimitingService {
             if (!secondResult.isAllowed()) {
                 log.warn("[Rate Limiting] 사용자 초당 제한 초과 - User: {}, 제한: {}회/초 (Burst Attack 감지)", 
                         userUUID, rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerSecond());
-                metricsService.recordRateLimitHit("USER_SECOND", userUUID, "second_limit");
                 return secondResult;
             }
 
@@ -139,7 +133,6 @@ public class RateLimitingService {
             if (!minuteResult.isAllowed()) {
                 log.warn("[Rate Limiting] 사용자 분당 제한 초과 - User: {}, 제한: {}회/분", 
                         userUUID, rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerMinute());
-                metricsService.recordRateLimitHit("USER_MINUTE", userUUID, "minute_limit");
                 return minuteResult;
             }
 
@@ -154,7 +147,6 @@ public class RateLimitingService {
             if (!hourResult.isAllowed()) {
                 log.warn("[Rate Limiting] 사용자 시간당 제한 초과 - User: {}, 제한: {}회/시간", 
                         userUUID, rateLimitingConfig.getUserLimit().getAuthenticatedUserRequestsPerHour());
-                metricsService.recordRateLimitHit("USER_HOUR", userUUID, "hour_limit");
             }
 
             return hourResult;
@@ -198,7 +190,6 @@ public class RateLimitingService {
             if (!secondResult.isAllowed()) {
                 log.warn("[Rate Limiting] API 초당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/초 (Burst Attack 감지)", 
                         apiPath, identifier, apiLimit.getRequestsPerSecond());
-                metricsService.recordRateLimitHit("API_SECOND", identifier, apiPath);
                 return secondResult;
             }
 
@@ -212,7 +203,6 @@ public class RateLimitingService {
             if (!minuteResult.isAllowed()) {
                 log.warn("[Rate Limiting] API 분당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/분", 
                         apiPath, identifier, apiLimit.getRequestsPerMinute());
-                metricsService.recordRateLimitHit("API_MINUTE", identifier, apiPath);
                 return minuteResult;
             }
 
@@ -226,7 +216,6 @@ public class RateLimitingService {
             if (!hourResult.isAllowed()) {
                 log.warn("[Rate Limiting] API 시간당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/시간", 
                         apiPath, identifier, apiLimit.getRequestsPerHour());
-                metricsService.recordRateLimitHit("API_HOUR", identifier, apiPath);
             }
 
             return hourResult;
