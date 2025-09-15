@@ -4,6 +4,7 @@ import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
+import io.github.bucket4j.EstimationProbe;
 import io.github.bucket4j.redis.lettuce.cas.LettuceBasedProxyManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -160,7 +161,7 @@ public class RateLimitingService {
     /**
      * API별 요청 제한 검사 (3단계: 초 → 분 → 시간)
      * 특정 API 엔드포인트에 대한 초/분/시간당 세밀한 제한 적용
-     * Burst Attack 완전 차단을 위한 초 단위 제한 추가
+     * 모든 버킷에서 토큰을 소비하여 정확한 Rate Limiting 구현
      */
     public RateLimitResult checkApiLimit(String apiPath, String identifier) {
         if (!rateLimitingConfig.isEnabled()) {
@@ -176,49 +177,117 @@ public class RateLimitingService {
             return RateLimitResult.allowed();
         }
         
-        log.info("[Rate Limiting] API별 제한 적용 - API: {}, 식별자: {}, 제한: {}회/분", 
-                apiPath, identifier, apiLimit.getRequestsPerMinute());
+        log.info("[Rate Limiting] API별 제한 적용 - API: {}, 식별자: {}, 제한: {}초/{}분/{}시간", 
+                apiPath, identifier, apiLimit.getRequestsPerSecond(), 
+                apiLimit.getRequestsPerMinute(), apiLimit.getRequestsPerHour());
 
         try {
-            // 1단계: 초당 제한 검사 (최우선 - Burst Attack 완전 차단)
+            // 버킷 생성
             String secondKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "second");
-            RateLimitResult secondResult = checkLimit(
-                secondKey,
-                () -> createApiBucketConfiguration(apiLimit.getRequestsPerSecond(), apiLimit.getWindowSizeSecond())
-            );
+            String minuteKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "minute");
+            String hourKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "hour");
 
-            if (!secondResult.isAllowed()) {
-                log.warn("[Rate Limiting] API 초당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/초 (Burst Attack 감지)", 
+            Bucket secondBucket = proxyManager.builder()
+                    .build(secondKey.getBytes(), () -> createApiBucketConfiguration(
+                        apiLimit.getRequestsPerSecond(), apiLimit.getWindowSizeSecond()));
+            
+            Bucket minuteBucket = proxyManager.builder()
+                    .build(minuteKey.getBytes(), () -> createApiBucketConfiguration(
+                        apiLimit.getRequestsPerMinute(), apiLimit.getWindowSizeMinute()));
+            
+            Bucket hourBucket = proxyManager.builder()
+                    .build(hourKey.getBytes(), () -> createApiBucketConfiguration(
+                        apiLimit.getRequestsPerHour(), apiLimit.getWindowSizeHour()));
+
+            // 1단계: 모든 버킷의 토큰 가용성 확인 (실제 소비하지 않음)
+            EstimationProbe secondProbe = secondBucket.estimateAbilityToConsume(1);
+            EstimationProbe minuteProbe = minuteBucket.estimateAbilityToConsume(1);
+            EstimationProbe hourProbe = hourBucket.estimateAbilityToConsume(1);
+
+            // 가장 제한적인 버킷 찾기
+            if (!secondProbe.canBeConsumed()) {
+                log.warn("[Rate Limiting] API 초당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/초", 
                         apiPath, identifier, apiLimit.getRequestsPerSecond());
-                return secondResult;
+                return RateLimitResult.rejected(
+                    Duration.ofNanos(secondProbe.getNanosToWaitForRefill()),
+                    secondProbe.getRemainingTokens(),
+                    minuteProbe.getRemainingTokens(),
+                    hourProbe.getRemainingTokens(),
+                    apiLimit, "API"
+                );
             }
 
-            // 2단계: 분당 제한 검사
-            String minuteKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "minute");
-            RateLimitResult minuteResult = checkLimit(
-                minuteKey,
-                () -> createApiBucketConfiguration(apiLimit.getRequestsPerMinute(), apiLimit.getWindowSizeMinute())
-            );
-
-            if (!minuteResult.isAllowed()) {
+            if (!minuteProbe.canBeConsumed()) {
                 log.warn("[Rate Limiting] API 분당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/분", 
                         apiPath, identifier, apiLimit.getRequestsPerMinute());
-                return minuteResult;
+                return RateLimitResult.rejected(
+                    Duration.ofNanos(minuteProbe.getNanosToWaitForRefill()),
+                    secondProbe.getRemainingTokens(),
+                    minuteProbe.getRemainingTokens(),
+                    hourProbe.getRemainingTokens(),
+                    apiLimit, "API"
+                );
             }
 
-            // 3단계: 시간당 제한 검사
-            String hourKey = RateLimitKeyBuilder.buildApiKey(apiPath, identifier, "hour");
-            RateLimitResult hourResult = checkLimit(
-                hourKey,
-                () -> createApiBucketConfiguration(apiLimit.getRequestsPerHour(), apiLimit.getWindowSizeHour())
-            );
-
-            if (!hourResult.isAllowed()) {
+            if (!hourProbe.canBeConsumed()) {
                 log.warn("[Rate Limiting] API 시간당 제한 초과 - API: {}, 식별자: {}, 제한: {}회/시간", 
                         apiPath, identifier, apiLimit.getRequestsPerHour());
+                return RateLimitResult.rejected(
+                    Duration.ofNanos(hourProbe.getNanosToWaitForRefill()),
+                    secondProbe.getRemainingTokens(),
+                    minuteProbe.getRemainingTokens(),
+                    hourProbe.getRemainingTokens(),
+                    apiLimit, "API"
+                );
             }
 
-            return hourResult;
+            // 2단계: 모든 제한을 통과했을 때만 실제로 토큰 소비
+            ConsumptionProbe secondConsumption = secondBucket.tryConsumeAndReturnRemaining(1);
+            ConsumptionProbe minuteConsumption = minuteBucket.tryConsumeAndReturnRemaining(1);
+            ConsumptionProbe hourConsumption = hourBucket.tryConsumeAndReturnRemaining(1);
+
+            // 예외적인 경우 처리 (동시성으로 인한 토큰 부족)
+            if (!secondConsumption.isConsumed() || !minuteConsumption.isConsumed() || !hourConsumption.isConsumed()) {
+                log.warn("[Rate Limiting] 동시성으로 인한 토큰 소비 실패 - API: {}, 식별자: {}", apiPath, identifier);
+                // 가장 제한적인 버킷의 정보를 반환
+                if (!secondConsumption.isConsumed()) {
+                    return RateLimitResult.rejected(
+                        Duration.ofNanos(secondConsumption.getNanosToWaitForRefill()),
+                        secondConsumption.getRemainingTokens(),
+                        minuteConsumption.getRemainingTokens(),
+                        hourConsumption.getRemainingTokens(),
+                        apiLimit, "API"
+                    );
+                } else if (!minuteConsumption.isConsumed()) {
+                    return RateLimitResult.rejected(
+                        Duration.ofNanos(minuteConsumption.getNanosToWaitForRefill()),
+                        secondConsumption.getRemainingTokens(),
+                        minuteConsumption.getRemainingTokens(),
+                        hourConsumption.getRemainingTokens(),
+                        apiLimit, "API"
+                    );
+                } else {
+                    return RateLimitResult.rejected(
+                        Duration.ofNanos(hourConsumption.getNanosToWaitForRefill()),
+                        secondConsumption.getRemainingTokens(),
+                        minuteConsumption.getRemainingTokens(),
+                        hourConsumption.getRemainingTokens(),
+                        apiLimit, "API"
+                    );
+                }
+            }
+
+            // 성공 시 모든 버킷의 정보를 포함한 결과 반환
+            log.debug("[Rate Limiting] API 제한 통과 - API: {}, 남은 토큰: 초({}) 분({}) 시간({})", 
+                    apiPath, secondConsumption.getRemainingTokens(), 
+                    minuteConsumption.getRemainingTokens(), hourConsumption.getRemainingTokens());
+
+            return RateLimitResult.allowed(
+                secondConsumption.getRemainingTokens(),
+                minuteConsumption.getRemainingTokens(),
+                hourConsumption.getRemainingTokens(),
+                apiLimit, "API"
+            );
 
         } catch (Exception e) {
             log.error("[Rate Limiting] API 제한 검사 중 오류 발생 - API: {}, 식별자: {}, 오류: {}", 
@@ -303,36 +372,79 @@ public class RateLimitingService {
     /**
      * Rate Limiting 결과를 담는 클래스
      * 요청 허용/거부 여부와 관련 메타데이터를 포함하는 불변 객체
+     * 다중 시간 단위 토큰 정보 포함
      */
     public static class RateLimitResult {
         /** 요청 허용 여부 (true: 허용, false: 거부) */
         private final boolean allowed;
         
-        /** 현재 남은 토큰 수 */
+        /** 현재 남은 토큰 수 (가장 제한적인 버킷 기준) */
         private final long remainingTokens;
         
         /** 다음 토큰 리필까지 대기 시간 (거부된 경우에만 의미 있음) */
         private final Duration retryAfter;
+        
+        /** 초당 버킷의 남은 토큰 수 */
+        private final long secondRemainingTokens;
+        
+        /** 분당 버킷의 남은 토큰 수 */
+        private final long minuteRemainingTokens;
+        
+        /** 시간당 버킷의 남은 토큰 수 */
+        private final long hourRemainingTokens;
+        
+        /** 적용된 API 제한 설정 */
+        private final RateLimitingConfig.ApiLimit appliedLimit;
+        
+        /** 제한 타입 (IP, USER, API) */
+        private final String limitType;
 
-        private RateLimitResult(boolean allowed, long remainingTokens, Duration retryAfter) {
+        private RateLimitResult(boolean allowed, long remainingTokens, Duration retryAfter,
+                               long secondRemaining, long minuteRemaining, long hourRemaining,
+                               RateLimitingConfig.ApiLimit appliedLimit, String limitType) {
             this.allowed = allowed;
             this.remainingTokens = remainingTokens;
             this.retryAfter = retryAfter;
+            this.secondRemainingTokens = secondRemaining;
+            this.minuteRemainingTokens = minuteRemaining;
+            this.hourRemainingTokens = hourRemaining;
+            this.appliedLimit = appliedLimit;
+            this.limitType = limitType;
         }
 
         /** 요청 허용 결과 생성 (남은 토큰 수 불명) */
         public static RateLimitResult allowed() {
-            return new RateLimitResult(true, -1, null);
+            return new RateLimitResult(true, -1, null, -1, -1, -1, null, "UNKNOWN");
         }
 
         /** 요청 허용 결과 생성 (남은 토큰 수 포함) */
         public static RateLimitResult allowed(long remainingTokens) {
-            return new RateLimitResult(true, remainingTokens, null);
+            return new RateLimitResult(true, remainingTokens, null, -1, -1, -1, null, "BASIC");
+        }
+
+        /** 요청 허용 결과 생성 (다중 시간 단위 토큰 정보 포함) */
+        public static RateLimitResult allowed(long secondRemaining, long minuteRemaining, 
+                                            long hourRemaining, RateLimitingConfig.ApiLimit appliedLimit,
+                                            String limitType) {
+            long minRemaining = Math.min(Math.min(secondRemaining, minuteRemaining), hourRemaining);
+            return new RateLimitResult(true, minRemaining, null, 
+                                     secondRemaining, minuteRemaining, hourRemaining, 
+                                     appliedLimit, limitType);
         }
 
         /** 요청 거부 결과 생성 (재시도 시간과 남은 토큰 수 포함) */
         public static RateLimitResult rejected(Duration retryAfter, long remainingTokens) {
-            return new RateLimitResult(false, remainingTokens, retryAfter);
+            return new RateLimitResult(false, remainingTokens, retryAfter, -1, -1, -1, null, "BASIC");
+        }
+
+        /** 요청 거부 결과 생성 (다중 시간 단위 토큰 정보 포함) */
+        public static RateLimitResult rejected(Duration retryAfter, long secondRemaining, 
+                                             long minuteRemaining, long hourRemaining,
+                                             RateLimitingConfig.ApiLimit appliedLimit, String limitType) {
+            long minRemaining = Math.min(Math.min(secondRemaining, minuteRemaining), hourRemaining);
+            return new RateLimitResult(false, minRemaining, retryAfter,
+                                     secondRemaining, minuteRemaining, hourRemaining,
+                                     appliedLimit, limitType);
         }
 
         /** @return 요청 허용 여부 */
@@ -343,5 +455,20 @@ public class RateLimitingService {
         
         /** @return 다음 토큰 리필까지 대기 시간 */
         public Duration getRetryAfter() { return retryAfter; }
+        
+        /** @return 초당 버킷의 남은 토큰 수 */
+        public long getSecondRemainingTokens() { return secondRemainingTokens; }
+        
+        /** @return 분당 버킷의 남은 토큰 수 */
+        public long getMinuteRemainingTokens() { return minuteRemainingTokens; }
+        
+        /** @return 시간당 버킷의 남은 토큰 수 */
+        public long getHourRemainingTokens() { return hourRemainingTokens; }
+        
+        /** @return 적용된 API 제한 설정 */
+        public RateLimitingConfig.ApiLimit getAppliedLimit() { return appliedLimit; }
+        
+        /** @return 제한 타입 */
+        public String getLimitType() { return limitType; }
     }
 }
