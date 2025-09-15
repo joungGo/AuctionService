@@ -23,7 +23,7 @@ jobs:
         run: |
           echo "🚀 Deploying to production"
           echo "📝 Reason: ${{ github.event.inputs.reason }}"
-          echo "🌿 Branch: main"
+          echo "🌿 Branch: ${{ github.ref_name }}"
           echo "👤 Triggered by: ${{ github.actor }}"
 
       - name: JDK 21 설정
