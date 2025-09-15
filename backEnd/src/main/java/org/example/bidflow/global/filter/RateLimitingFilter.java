@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.bidflow.global.config.RateLimitingConfig;
 import org.example.bidflow.global.service.RateLimitingService;
 import org.example.bidflow.global.service.RateLimitingService.RateLimitResult;
 import org.springframework.core.annotation.Order;
@@ -64,14 +65,20 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     /**
      * Rate Limiting 핵심 처리 로직
      * 1. IP 기반 제한 검사 2. 사용자 기반 제한 검사 3. API별 제한 검사를 순차적으로 수행
+     * 4. 성공 응답에 Rate Limit 정보 추가
      */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
+        String clientIp = null;
+        String requestUri = null;
+        String userUUID = null;
+        RateLimitResult finalResult = null;
+
         try {
-            String clientIp = getClientIpAddress(request);
-            String requestUri = request.getRequestURI(); // 요청된 API 경로
+            clientIp = getClientIpAddress(request);
+            requestUri = request.getRequestURI(); // 요청된 API 경로
             
             log.debug("[Rate Limiting] 요청 검사 시작 - IP: {}, URI: {}", clientIp, requestUri);
 
@@ -83,7 +90,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             }
 
             // 2. 인증된 사용자의 경우 추가 제한 검사 (더 관대한 제한)
-            String userUUID = getCurrentUserUUID();
+            userUUID = getCurrentUserUUID();
             if (userUUID != null) {
                 RateLimitResult userResult = rateLimitingService.checkUserLimit(userUUID);
                 if (!userResult.isAllowed()) {
@@ -100,8 +107,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 return;
             }
 
+            // 최종 결과 저장 (성공 응답에 포함할 정보)
+            finalResult = apiResult;
+
             // 4. 응답 헤더에 Rate Limit 정보 추가 (클라이언트 가이드용)
-            addRateLimitHeaders(response, ipResult, userUUID != null);
+            addRateLimitHeaders(response, apiResult, userUUID != null, requestUri);
 
             log.debug("[Rate Limiting] 요청 허용 - IP: {}, URI: {}, User: {}", clientIp, requestUri, userUUID);
             
@@ -110,8 +120,15 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             // 오류 발생 시 요청 허용 (서비스 가용성 우선 - Fail Open 정책)
         }
 
-        // Rate Limiting 통과 시 다음 필터로 요청 전달
-        filterChain.doFilter(request, response);
+        // Rate Limiting 통과 시 ResponseWrapper로 감싸서 성공 응답에 토큰 정보 추가
+        if (finalResult != null && finalResult.isAllowed()) {
+            RateLimitResponseWrapper responseWrapper = new RateLimitResponseWrapper(response, objectMapper, finalResult, requestUri);
+            filterChain.doFilter(request, responseWrapper);
+            responseWrapper.copyBodyToResponse();
+        } else {
+            // Rate Limit 정보가 없는 경우 (오류 발생 등) 원본 응답 사용
+            filterChain.doFilter(request, response);
+        }
     }
 
     /**
@@ -218,7 +235,45 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         // 재시도 가능 시간 정보 추가
         if (result.getRetryAfter() != null) {
             errorResponse.put("retryAfterSeconds", result.getRetryAfter().getSeconds());
+            errorResponse.put("retryAfterMillis", result.getRetryAfter().toMillis());
         }
+
+        // 상세한 토큰 정보 추가
+        Map<String, Object> rateLimitInfo = new HashMap<>();
+        
+        // 남은 토큰 수 정보
+        Map<String, Object> remainingTokens = new HashMap<>();
+        if (result.getSecondRemainingTokens() >= 0) {
+            remainingTokens.put("second", result.getSecondRemainingTokens());
+        }
+        if (result.getMinuteRemainingTokens() >= 0) {
+            remainingTokens.put("minute", result.getMinuteRemainingTokens());
+        }
+        if (result.getHourRemainingTokens() >= 0) {
+            remainingTokens.put("hour", result.getHourRemainingTokens());
+        }
+        rateLimitInfo.put("remainingTokens", remainingTokens);
+        
+        // 제한 토큰 수 정보
+        Map<String, Object> limits = new HashMap<>();
+        if (result.getAppliedLimit() != null) {
+            RateLimitingConfig.ApiLimit limit = result.getAppliedLimit();
+            limits.put("second", limit.getRequestsPerSecond());
+            limits.put("minute", limit.getRequestsPerMinute());
+            limits.put("hour", limit.getRequestsPerHour());
+        } else {
+            // 기본 IP 제한 정보
+            limits.put("second", 10);
+            limits.put("minute", 100);
+            limits.put("hour", 1000);
+        }
+        rateLimitInfo.put("limits", limits);
+        
+        // 제한 타입별 추가 정보
+        rateLimitInfo.put("endpoint", identifier);
+        rateLimitInfo.put("appliedRuleType", result.getLimitType() != null ? result.getLimitType() : limitType);
+        
+        errorResponse.put("rateLimitInfo", rateLimitInfo);
 
         // JSON 응답 생성 및 전송
         String jsonResponse = objectMapper.writeValueAsString(errorResponse);
@@ -227,16 +282,51 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     /**
      * 응답 헤더에 Rate Limit 정보 추가
-     * 클라이언트가 현재 Rate Limit 상태를 파악할 수 있도록 헤더 정보 제공
+     * 클라이언트가 현재 Rate Limit 상태를 파악할 수 있도록 상세한 헤더 정보 제공
+     * @param result Rate Limiting 검사 결과
      * @param isAuthenticated 인증된 사용자 여부
+     * @param requestUri 요청 URI
      */
-    private void addRateLimitHeaders(HttpServletResponse response, RateLimitResult result, boolean isAuthenticated) {
-        // 남은 요청 수 헤더 추가 (유효한 값인 경우에만)
+    private void addRateLimitHeaders(HttpServletResponse response, RateLimitResult result, 
+                                   boolean isAuthenticated, String requestUri) {
+        
+        // 기본 토큰 정보
         if (result.getRemainingTokens() >= 0) {
             response.setHeader("X-RateLimit-Remaining", String.valueOf(result.getRemainingTokens()));
         }
 
-        // 적용된 Rate Limiting 타입 정보 추가 (클라이언트 디버깅용)
-        response.setHeader("X-RateLimit-Type", isAuthenticated ? "USER" : "IP");
+        // 각 시간 단위별 남은 토큰 수
+        if (result.getSecondRemainingTokens() >= 0) {
+            response.setHeader("X-RateLimit-Second-Remaining", String.valueOf(result.getSecondRemainingTokens()));
+        }
+        if (result.getMinuteRemainingTokens() >= 0) {
+            response.setHeader("X-RateLimit-Minute-Remaining", String.valueOf(result.getMinuteRemainingTokens()));
+        }
+        if (result.getHourRemainingTokens() >= 0) {
+            response.setHeader("X-RateLimit-Hour-Remaining", String.valueOf(result.getHourRemainingTokens()));
+        }
+
+        // 각 시간 단위별 제한 수
+        if (result.getAppliedLimit() != null) {
+            RateLimitingConfig.ApiLimit limit = result.getAppliedLimit();
+            response.setHeader("X-RateLimit-Second-Limit", String.valueOf(limit.getRequestsPerSecond()));
+            response.setHeader("X-RateLimit-Minute-Limit", String.valueOf(limit.getRequestsPerMinute()));
+            response.setHeader("X-RateLimit-Hour-Limit", String.valueOf(limit.getRequestsPerHour()));
+        } else {
+            // 기본 IP 제한 정보 (API별 제한이 없는 경우)
+            response.setHeader("X-RateLimit-Second-Limit", "10");
+            response.setHeader("X-RateLimit-Minute-Limit", "100");
+            response.setHeader("X-RateLimit-Hour-Limit", "1000");
+        }
+
+        // 추가 메타데이터
+        response.setHeader("X-RateLimit-Type", result.getLimitType() != null ? result.getLimitType() : (isAuthenticated ? "USER" : "IP"));
+        response.setHeader("X-RateLimit-Endpoint", requestUri);
+        
+        // 다음 리셋 시간 (현재 시간 기준)
+        long currentTime = System.currentTimeMillis();
+        response.setHeader("X-RateLimit-Reset-Second", String.valueOf(currentTime + 1000));
+        response.setHeader("X-RateLimit-Reset-Minute", String.valueOf(currentTime + 60000));
+        response.setHeader("X-RateLimit-Reset-Hour", String.valueOf(currentTime + 3600000));
     }
 }
