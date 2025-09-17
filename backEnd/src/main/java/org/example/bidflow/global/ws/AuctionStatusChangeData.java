@@ -22,7 +22,7 @@ public class AuctionStatusChangeData {
 	private String newStatus; // e.g., NEW_AUCTION 대상 상태 또는 변경된 상태 필드
 	private Long categoryId;
 	private LocalDateTime eventTime;
-	private Long startPrice;
+	private Integer startPrice;
 	private LocalDateTime endTime;
 	private Map<String, Object> additionalInfo;
 }

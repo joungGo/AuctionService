@@ -32,7 +32,7 @@ public class WebSocketSessionManager {
 	public static class SessionSubscription {
 		private String sessionId;                 // 세션 ID
 		private String currentPage;               // 현재 페이지: main | category | auction-detail
-		private Set<String> subscribedTopics;     // 구독 중인 토픽 집합 - new-auctions, all-status-changes, category-status-changes, specific-auction-changes
+		private Set<String> subscribedTopics;     // 구독 중인 토픽 집합
 		private Map<String, Object> pageContext;  // 페이지 컨텍스트 (categoryId, auctionId 등)
 		private Instant subscribedAt;             // 구독 시간
 		private Instant lastActivity;             // 마지막 활동 시간
