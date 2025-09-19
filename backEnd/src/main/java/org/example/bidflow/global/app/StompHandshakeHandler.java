@@ -11,6 +11,7 @@ import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
+import org.springframework.core.env.Environment;
 
 import java.util.Map;
 
@@ -21,6 +22,7 @@ public class StompHandshakeHandler implements HandshakeInterceptor {
 
     private final JwtProvider jwtProvider;
     private final CookieUtil cookieUtil;
+    private final Environment environment;
 
     // Handshake 전 처리 (쿠키 기반 인증 - 기본 검증만)
     @Override
@@ -31,6 +33,13 @@ public class StompHandshakeHandler implements HandshakeInterceptor {
         }
 
         HttpServletRequest httpRequest = servletRequest.getServletRequest();
+
+        // 개발 환경(dev)에서는 인증 우회 허용 (로컬 크로스사이트 쿠키 문제 대응)
+        if (isDevProfileActive()) {
+            log.info("[WebSocket Handshake][DEV] 개발환경 - 인증 우회로 연결 허용");
+            return true;
+        }
+
         String token = extractToken(httpRequest);
 
         // 토큰이 있고 유효하면 연결 허용 (세션에 저장)
@@ -70,5 +79,15 @@ public class StompHandshakeHandler implements HandshakeInterceptor {
 
         log.debug("[WebSocket] 토큰을 찾을 수 없습니다.");
         return null;
+    }
+
+    // 활성 프로파일에 dev가 포함되어 있는지 검사
+    private boolean isDevProfileActive() {
+        try {
+            for (String p : environment.getActiveProfiles()) {
+                if ("dev".equalsIgnoreCase(p)) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
     }
 }
