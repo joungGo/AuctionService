@@ -95,10 +95,12 @@ public class WebSocketSessionManager {
 
 	/** NEW_AUCTION 대상: 메인/카테고리 구독자 전체 반환 */
 	public Set<String> getSessionsForNewAuction() {
-		return sessionSubscriptions.values().stream()
+		Set<String> sessions = sessionSubscriptions.values().stream()
 				.filter(sub -> sub.getSubscribedTopics().contains("new-auctions"))
 				.map(SessionSubscription::getSessionId)
 				.collect(Collectors.toSet());
+		log.info("[WS 디버그] NEW_AUCTION 대상 세션 수: {}", sessions.size());
+		return sessions;
 	}
 
 	/** AUCTION_STATUS_CHANGE 대상: all-status 또는 일치 카테고리 또는 일치 경매 구독자 */

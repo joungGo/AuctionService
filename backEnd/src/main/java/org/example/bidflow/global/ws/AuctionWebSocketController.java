@@ -10,6 +10,7 @@ import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 경매 관련 WebSocket STOMP 컨트롤러
@@ -76,9 +77,12 @@ public class AuctionWebSocketController {
 	/** NEW_AUCTION 브로드캐스트 (타겟팅) */
 	public void broadcastNewAuction(AuctionStatusChangeData data) {
 		WebSocketMessage<AuctionStatusChangeData> msg = WebSocketMessage.create("NEW_AUCTION", data);
-		sessionManager.getSessionsForNewAuction().forEach(sessionId ->
-				messagingTemplate.convertAndSendToUser(sessionId, "/queue/auction-updates", msg)
-		);
+		Set<String> targetSessions = sessionManager.getSessionsForNewAuction();
+		log.info("[WS 디버그] NEW_AUCTION 전송 대상: {}명", targetSessions.size());
+		targetSessions.forEach(sessionId -> {
+			log.info("[WS 디버그] 세션 {}에 메시지 전송", sessionId);
+			messagingTemplate.convertAndSendToUser(sessionId, "/queue/auction-updates", msg);
+		});
 		log.info("[WS 송신] NEW_AUCTION - auctionId: {} 대상: {}명", data.getAuctionId(), sessionManager.getActiveSessionIds().size());
 	}
 
