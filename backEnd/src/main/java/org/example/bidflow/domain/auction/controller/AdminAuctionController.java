@@ -2,10 +2,12 @@ package org.example.bidflow.domain.auction.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.example.bidflow.data.Role;
 import org.example.bidflow.domain.auction.dto.AuctionAdminResponse;
 import org.example.bidflow.domain.auction.dto.AuctionCreateResponse;
 import org.example.bidflow.domain.auction.dto.AuctionRequest;
 import org.example.bidflow.domain.auction.service.AuctionService;
+import org.example.bidflow.global.annotation.HasRole;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,7 @@ public class AdminAuctionController {
     private final AuctionService auctionService;
 
     // 경매 등록 컨트롤러
+    @HasRole(Role.ADMIN)
     @PostMapping
     public ResponseEntity<RsData<AuctionCreateResponse>> createAuction(@Valid @RequestBody AuctionRequest requestDto) {
         RsData<AuctionCreateResponse> response = auctionService.createAuction(requestDto);
@@ -25,6 +28,7 @@ public class AdminAuctionController {
     }
 
     // 전체 경매 상품 리스트 조회 컨트롤러
+    @HasRole(Role.ADMIN)
     @GetMapping
     public ResponseEntity<RsData<List<AuctionAdminResponse>>> getAllAuctions() {
         // AuctionService에서 AuctionResponse 리스트를 반환
@@ -34,6 +38,7 @@ public class AdminAuctionController {
     }
 
     // 기존 경매들에 기본 카테고리 할당 (한 번만 실행)
+    @HasRole(Role.ADMIN)
     @PostMapping("/assign-default-category")
     public ResponseEntity<RsData<String>> assignDefaultCategoryToExistingAuctions() {
         auctionService.assignDefaultCategoryToExistingAuctions();

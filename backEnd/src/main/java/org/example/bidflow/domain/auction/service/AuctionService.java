@@ -28,6 +28,8 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
+import org.example.bidflow.global.ws.AuctionStatusChangeData;
+import org.example.bidflow.global.ws.AuctionWebSocketController;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +44,7 @@ public class AuctionService {
     private final UserService userService;
     private final CategoryService categoryService;
     private final AuctionSchedulerService auctionSchedulerService;
+    private final AuctionWebSocketController wsController; // NEW_AUCTION 브로드캐스트용 컨트롤러
 
     // 사용자-모든 경매 목록을 조회하고 AuctionResponse DTO 리스트로 변환
     public List<AuctionCheckResponse> getAllAuctions()  {
@@ -148,6 +151,23 @@ public class AuctionService {
 
         // 경매 스케줄 등록 (Quartz 기반)
         auctionSchedulerService.scheduleAuction(auction);
+
+        // NEW_AUCTION 웹소켓 알림 전송 (메인/카테고리 대상)
+        try {
+            AuctionStatusChangeData data = AuctionStatusChangeData.builder()
+                    .auctionId(auction.getAuctionId())
+                    .productName(auction.getProduct().getProductName())
+                    .oldStatus("NONE")
+                    .newStatus(auction.getStatus().name())
+                    .categoryId(auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryId() : null)
+                    .eventTime(LocalDateTime.now())
+                    .startPrice(auction.getStartPrice())
+                    .endTime(auction.getEndTime())
+                    .build();
+            wsController.broadcastNewAuction(data);
+        } catch (Exception e) {
+            log.warn("[AuctionService] NEW_AUCTION 알림 전송 실패 - auctionId: {}, err: {}", auction.getAuctionId(), e.getMessage());
+        }
 
         // 성공 응답 반환
         return new RsData<>("201", "경매가 등록되었습니다.", AuctionCreateResponse.from(auction));
