@@ -24,7 +24,6 @@ import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
@@ -265,6 +264,60 @@ public class AuctionService {
         }
         
         log.info("총 {}개 상품에 기본 카테고리 할당 완료", productsWithoutCategory.size());
+    }
+
+    // 경매 통계 조회
+    public AuctionStatisticsResponse getAuctionStatistics() {
+        // 현재 진행 중인 경매 수
+        Long ongoingAuctions = auctionRepository.countOngoingAuctions();
+        
+        // 오늘의 총 입찰 수
+        Long todayBids = bidRepository.countTodayBids();
+        
+        // 평균 입찰가 대비 최고가 비율 계산
+        Double avgToMaxBidRatio = calculateAvgToMaxBidRatio();
+        
+        // 카테고리별 활성 경매 분포
+        List<AuctionStatisticsResponse.CategoryAuctionCount> categoryDistribution = 
+            getCategoryAuctionDistribution();
+        
+        return AuctionStatisticsResponse.builder()
+                .ongoingAuctions(ongoingAuctions)
+                .todayBids(todayBids)
+                .avgToMaxBidRatio(avgToMaxBidRatio)
+                .categoryDistribution(categoryDistribution)
+                .build();
+    }
+    
+    // 평균 입찰가 대비 최고가 비율 계산
+    private Double calculateAvgToMaxBidRatio() {
+        List<Object[]> results = bidRepository.findAvgAndMaxBidAmountsForOngoingAuctions();
+        
+        if (results.isEmpty() || results.get(0)[0] == null || results.get(0)[1] == null) {
+            return 0.0;
+        }
+        
+        Double avgAmount = ((Number) results.get(0)[0]).doubleValue();
+        Double maxAmount = ((Number) results.get(0)[1]).doubleValue();
+        
+        if (avgAmount == 0) {
+            return 0.0;
+        }
+        
+        return Math.round((maxAmount / avgAmount) * 100.0) / 100.0; // 소수점 둘째 자리까지
+    }
+    
+    // 카테고리별 활성 경매 분포 조회
+    private List<AuctionStatisticsResponse.CategoryAuctionCount> getCategoryAuctionDistribution() {
+        List<Object[]> results = auctionRepository.countOngoingAuctionsByCategory();
+        
+        return results.stream()
+                .map(result -> AuctionStatisticsResponse.CategoryAuctionCount.builder()
+                        .categoryId(((Number) result[0]).longValue())
+                        .categoryName((String) result[1])
+                        .auctionCount(((Number) result[2]).longValue())
+                        .build())
+                .collect(Collectors.toList());
     }
 
 }

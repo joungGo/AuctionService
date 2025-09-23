@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.bidflow.domain.auction.dto.AuctionAdminResponse;
 import org.example.bidflow.domain.auction.dto.AuctionCreateResponse;
 import org.example.bidflow.domain.auction.dto.AuctionRequest;
+import org.example.bidflow.domain.auction.dto.AuctionStatisticsResponse;
 import org.example.bidflow.domain.auction.service.AuctionService;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
@@ -38,5 +39,13 @@ public class AdminAuctionController {
     public ResponseEntity<RsData<String>> assignDefaultCategoryToExistingAuctions() {
         auctionService.assignDefaultCategoryToExistingAuctions();
         return ResponseEntity.ok(new RsData<>("200", "기존 경매들에 기본 카테고리 할당이 완료되었습니다.", "success"));
+    }
+
+    // 경매 통계 조회
+    @GetMapping("/statistics")
+    public ResponseEntity<RsData<AuctionStatisticsResponse>> getAuctionStatistics() {
+        AuctionStatisticsResponse statistics = auctionService.getAuctionStatistics();
+        RsData<AuctionStatisticsResponse> rsData = new RsData<>("200", "경매 통계 조회가 완료되었습니다.", statistics);
+        return ResponseEntity.ok(rsData);
     }
 }

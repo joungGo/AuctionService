@@ -1,6 +1,5 @@
 package org.example.bidflow.domain.auction.repository;
 
-import org.example.bidflow.data.AuctionStatus;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.category.entity.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -34,6 +33,17 @@ public interface AuctionRepository extends JpaRepository<Auction,Long> {
            "WHERE a.status IN ('UPCOMING', 'ONGOING') " +
            "AND (a.startTime > :now OR a.endTime > :now)")
     List<Auction> findAuctionsNeedingSchedule(LocalDateTime now);
+
+    // 현재 진행 중인 경매 수 조회
+    @Query("SELECT COUNT(a) FROM Auction a WHERE a.status = 'ONGOING'")
+    Long countOngoingAuctions();
+
+    // 카테고리별 활성 경매 수 조회
+    @Query("SELECT p.category.categoryId, p.category.categoryName, COUNT(a) " +
+           "FROM Auction a JOIN a.product p " +
+           "WHERE a.status = 'ONGOING' " +
+           "GROUP BY p.category.categoryId, p.category.categoryName")
+    List<Object[]> countOngoingAuctionsByCategory();
 }
 
 

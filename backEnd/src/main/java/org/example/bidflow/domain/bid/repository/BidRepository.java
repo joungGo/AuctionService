@@ -40,4 +40,13 @@ public interface BidRepository extends JpaRepository<Bid, Long> {
     // 사용자가 입찰한 경매 ID 목록(distinct) 조회
     @Query("SELECT DISTINCT b.auction.auctionId FROM Bid b WHERE b.user = :user")
     List<Long> findDistinctAuctionIdsByUser(@Param("user") User user);
+
+    // 오늘의 총 입찰 수 조회
+    @Query("SELECT COUNT(b) FROM Bid b WHERE DATE(b.bidTime) = CURRENT_DATE")
+    Long countTodayBids();
+
+    // 경매별 평균 입찰가와 최고가 비율 조회
+    @Query("SELECT AVG(b.amount), MAX(b.amount) FROM Bid b WHERE b.auction IN " +
+           "(SELECT a FROM Auction a WHERE a.status = 'ONGOING')")
+    List<Object[]> findAvgAndMaxBidAmountsForOngoingAuctions();
 }
