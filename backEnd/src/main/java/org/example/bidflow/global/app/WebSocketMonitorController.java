@@ -3,13 +3,19 @@ package org.example.bidflow.global.app;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.user.SimpSubscription;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
+/**
+ * WebSocket 모니터링용 관리자 REST 컨트롤러.
+ * - 현재 연결된 사용자/세션/구독 조회
+ * - 특정 경매방 참가자 수 조회 (향후 Redis 연동 확장 전제)
+ * - 테스트 목적의 임의 메시지 전송 및 강제 연결 해제 엔드포인트 제공
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/admin/websocket")
@@ -26,18 +32,34 @@ public class WebSocketMonitorController {
     public Map<String, Object> getWebSocketStatus() {
         Map<String, Object> status = new HashMap<>();
         
-        // 연결된 사용자 수
         int connectedUsers = simpUserRegistry.getUserCount();
         status.put("connectedUsers", connectedUsers);
-        
-        // 연결된 사용자 목록
-        Set<String> userNames = simpUserRegistry.getUsers().stream()
-                .map(user -> user.getName())
-                .collect(java.util.stream.Collectors.toSet());
-        status.put("connectedUserNames", userNames);
-        
-        // 활성 세션 수
-        status.put("activeSessions", connectedUsers);
+
+        // 사용자/세션/구독 상세
+        var users = simpUserRegistry.getUsers().stream().map(user -> {
+            Map<String, Object> u = new HashMap<>();
+            String name = user.getName(); // nickname::userUUID
+            String nickname = name;
+            String userUUID = null;
+            if (name != null && name.contains("::")) {
+                String[] parts = name.split("::", 2);
+                nickname = parts[0];
+                userUUID = parts.length > 1 ? parts[1] : null;
+            }
+            u.put("principal", name);
+            u.put("nickname", nickname);
+            u.put("userUUID", userUUID);
+
+            var sessions = user.getSessions().stream().map(session -> {
+                Map<String, Object> s = new HashMap<>();
+                s.put("sessionId", session.getId());
+                s.put("subscriptions", session.getSubscriptions().stream().map(SimpSubscription::getDestination).toList());
+                return s;
+            }).toList();
+            u.put("sessions", sessions);
+            return u;
+        }).toList();
+        status.put("users", users);
         
         log.info("[WebSocket Monitor] 연결 상태 조회 - 연결된 사용자: {}", connectedUsers);
         
@@ -51,8 +73,7 @@ public class WebSocketMonitorController {
     public Map<String, Object> getAuctionParticipants(@PathVariable Long auctionId) {
         Map<String, Object> result = new HashMap<>();
         
-        // Redis에서 참가자 수 조회
-        String pattern = "auction:" + auctionId + ":participant:*";
+        // Redis에서 참가자 수 조회 (실제 구현 시 RedisTemplate 사용 예정)
         // 실제 구현에서는 RedisTemplate을 주입받아 사용
         result.put("auctionId", auctionId);
         result.put("participantCount", 0); // 임시값

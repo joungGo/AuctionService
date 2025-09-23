@@ -8,6 +8,12 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+/**
+ * STOMP 기반 WebSocket 메시지 브로커 설정 클래스.
+ * - 클라이언트 엔드포인트: "/ws" (네이티브 WebSocket, SockJS 미사용)
+ * - 브로커 경로: 서버 → 클라이언트 전송 "/sub", 클라이언트 → 서버 전송 prefix "/app"
+ * - CORS 허용 오리진 설정 및 Handshake 단계에서 JWT 기반 Principal 설정/검증 적용
+ */
 @Configuration
 @EnableWebSocketMessageBroker       // STOMP 사용 명시
 @RequiredArgsConstructor
@@ -15,6 +21,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompHandshakeHandler stompHandshakeHandler;
+    private final JwtPrincipalHandshakeHandler jwtPrincipalHandshakeHandler;
     private final OriginConfig originConfig;
 
     @Override
@@ -29,6 +36,7 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
         registry.addEndpoint("/ws")         // -> ws://localhost:8080/ws
                 .setAllowedOrigins(originConfig.getFrontend().toArray(new String[0])) // 실제 origin 목록 사용
                 .setAllowedOriginPatterns("*") // 추가 패턴 허용
+                .setHandshakeHandler(jwtPrincipalHandshakeHandler) // Principal 설정
                 .addInterceptors(stompHandshakeHandler); // HandshakeInterceptor 추가 (JWT 검증)
         // 쿠키 기반 인증을 위해 SockJS 제거 - 네이티브 WebSocket 사용
     }
