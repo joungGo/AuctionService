@@ -1,6 +1,7 @@
 package org.example.bidflow.domain.auction.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.auction.dto.AuctionCheckResponse;
 import org.example.bidflow.domain.auction.dto.AuctionDetailResponse;
 import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.Set;
 
 @RestController
+@Slf4j
 @RequiredArgsConstructor
 @RequestMapping("/api/auctions")
 public class AuctionController {
@@ -36,6 +38,7 @@ public class AuctionController {
     public void joinParticipant(@Payload Map<String, String> payload) {
         String auctionId = payload.get("auctionId");
         String userUUID = payload.get("userUUID");
+        log.info("👥 [참여자] JOIN 요청 - auctionId: {}, userUUID: {}", auctionId, userUUID);
         String key = "auction:" + auctionId + ":participant:" + userUUID;
         redisTemplate.opsForValue().set(key, "true", 2, TimeUnit.MINUTES);
         broadcastParticipantCount(auctionId);
@@ -45,6 +48,7 @@ public class AuctionController {
     public void pingParticipant(@Payload Map<String, String> payload) {
         String auctionId = payload.get("auctionId");
         String userUUID = payload.get("userUUID");
+        log.info("👥 [참여자] PING 요청 - auctionId: {}, userUUID: {}", auctionId, userUUID);
         String key = "auction:" + auctionId + ":participant:" + userUUID;
         redisTemplate.opsForValue().set(key, "true", 2, TimeUnit.MINUTES);
         broadcastParticipantCount(auctionId);
@@ -54,6 +58,7 @@ public class AuctionController {
     public void leaveParticipant(@Payload Map<String, String> payload) {
         String auctionId = payload.get("auctionId");
         String userUUID = payload.get("userUUID");
+        log.info("👥 [참여자] LEAVE 요청 - auctionId: {}, userUUID: {}", auctionId, userUUID);
         String key = "auction:" + auctionId + ":participant:" + userUUID;
         redisTemplate.delete(key);
         broadcastParticipantCount(auctionId);
@@ -63,6 +68,7 @@ public class AuctionController {
         // SCAN or KEYS to count participants
         Set<String> keys = redisTemplate.keys("auction:" + auctionId + ":participant:*");
         int count = (keys != null) ? keys.size() : 0;
+        log.info("📢 [브로드캐스트] 참여자 수 전송 - auctionId: {}, count: {}", auctionId, count);
         simpMessagingTemplate.convertAndSend("/sub/auction/" + auctionId,
                 java.util.Collections.singletonMap("participantCount", count));
     }

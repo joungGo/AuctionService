@@ -3,6 +3,7 @@ package org.example.bidflow.global.app;
 import lombok.RequiredArgsConstructor;
 import org.example.bidflow.global.config.OriginConfig;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -23,11 +24,17 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
     private final StompHandshakeHandler stompHandshakeHandler;
     private final JwtPrincipalHandshakeHandler jwtPrincipalHandshakeHandler;
     private final OriginConfig originConfig;
+    private final StompChannelLoggingInterceptor stompChannelLoggingInterceptor;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         config.enableSimpleBroker("/sub"); // 구독(Subscribe) 경로 (서버 -> 클라이언트 로 메시지 보낼 때)
         config.setApplicationDestinationPrefixes("/app"); // 메시지 보낼 prefix (클라이언트 -> 서버)
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(stompChannelLoggingInterceptor);
     }
     
     @Override

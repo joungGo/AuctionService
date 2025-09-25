@@ -85,36 +85,38 @@ public class WebSocketMonitorController {
     }
 
     /**
-     * 테스트 메시지 전송
+     * 테스트 메시지 전송 (JSON Body)
      */
-    @PostMapping("/test/send")
-    public Map<String, Object> sendTestMessage(
-            @RequestParam String destination,
-            @RequestParam String message) {
-        
+    @PostMapping(value = "/test/send", consumes = "application/json")
+    public Map<String, Object> sendTestMessage(@RequestBody TestSendRequest request) {
         Map<String, Object> result = new HashMap<>();
-        
         try {
-            // 테스트 메시지 전송
+            String destination = request.getDestination();
+            String message = request.getMessage();
+
+            if (destination == null || destination.isBlank() || message == null || message.isBlank()) {
+                result.put("success", false);
+                result.put("error", "destination과 message는 필수입니다.");
+                return result;
+            }
+
             Map<String, Object> testMessage = new HashMap<>();
             testMessage.put("message", message);
             testMessage.put("timestamp", System.currentTimeMillis());
             testMessage.put("type", "TEST");
-            
+
             simpMessagingTemplate.convertAndSend(destination, testMessage);
-            
+
             result.put("success", true);
             result.put("destination", destination);
             result.put("message", "테스트 메시지 전송 완료");
-            
-            log.info("[WebSocket Monitor] 테스트 메시지 전송 - 목적지: {}, 메시지: {}", destination, message);
-            
+
+            log.info("[WebSocket Monitor] 테스트 메시지 전송(JSON) - 목적지: {}, 길이: {}", destination, message.length());
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getMessage());
-            log.error("[WebSocket Monitor] 테스트 메시지 전송 실패: {}", e.getMessage());
+            log.error("[WebSocket Monitor] 테스트 메시지 전송 실패(JSON): {}", e.getMessage());
         }
-        
         return result;
     }
 
