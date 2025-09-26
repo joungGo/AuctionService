@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.auction.dto.AuctionBidRequest;
 import org.example.bidflow.domain.auction.entity.Auction;
+import org.example.bidflow.domain.auction.entity.AuctionStatus;
 import org.example.bidflow.domain.auction.service.AuctionService;
 import org.example.bidflow.domain.bid.dto.model.response.BidCreateResponse;
 import org.example.bidflow.domain.bid.dto.model.response.BidHistoryResponse;
@@ -11,9 +12,8 @@ import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.bid.repository.BidRepository;
 import org.example.bidflow.domain.user.entity.User;
 import org.example.bidflow.domain.user.service.UserService;
-import org.example.bidflow.global.app.RedisCommon;
+import org.example.bidflow.global.utils.RedisCommon;
 import org.example.bidflow.global.exception.ServiceException;
-import org.example.bidflow.global.utils.JwtProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -24,7 +24,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
-import org.example.bidflow.data.AuctionStatus;
 
 @Slf4j
 @Service

@@ -1,7 +1,8 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.bidflow.global.utils.TestSendRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.user.SimpSubscription;
 import org.springframework.messaging.simp.user.SimpUserRegistry;

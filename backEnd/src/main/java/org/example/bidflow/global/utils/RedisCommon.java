@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.utils;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

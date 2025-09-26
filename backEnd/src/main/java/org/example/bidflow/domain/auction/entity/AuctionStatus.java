@@ -1,4 +1,4 @@
-package org.example.bidflow.data;
+package org.example.bidflow.domain.auction.entity;
 
 public enum AuctionStatus {
     ONGOING,

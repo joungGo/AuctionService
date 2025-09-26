@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.ws;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;

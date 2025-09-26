@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.utils;
 
 public class TestSendRequest {
     private String destination;

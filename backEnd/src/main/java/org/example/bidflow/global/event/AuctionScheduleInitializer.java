@@ -1,10 +1,11 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.event;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.bidflow.data.AuctionStatus;
 import org.example.bidflow.domain.auction.entity.Auction;
+import org.example.bidflow.domain.auction.entity.AuctionStatus;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
+import org.example.bidflow.global.service.AuctionSchedulerService;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;

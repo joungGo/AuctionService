@@ -1,10 +1,10 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.auction.entity.Auction;
-import org.example.bidflow.global.app.job.AuctionStartJob;
-import org.example.bidflow.global.app.job.AuctionEndJob;
+import org.example.bidflow.global.event.job.AuctionStartJob;
+import org.example.bidflow.global.event.job.AuctionEndJob;
 import org.quartz.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

@@ -1,6 +1,6 @@
 package org.example.bidflow.global.annotation;
 
-import org.example.bidflow.data.Role;
+import org.example.bidflow.domain.user.entity.Role;
 
 import java.lang.annotation.*;
 

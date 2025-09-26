@@ -1,15 +1,12 @@
 package org.example.bidflow.domain.user.service;
 
 import jakarta.mail.internet.MimeMessage;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.user.repository.UserRepository;
-import org.example.bidflow.global.app.RedisCommon;
+import org.example.bidflow.global.utils.RedisCommon;
 import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.http.HttpStatus;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;

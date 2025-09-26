@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

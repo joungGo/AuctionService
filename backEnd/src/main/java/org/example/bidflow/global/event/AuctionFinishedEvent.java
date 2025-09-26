@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.event;
 
 import lombok.Getter;
 import org.example.bidflow.domain.auction.entity.Auction;

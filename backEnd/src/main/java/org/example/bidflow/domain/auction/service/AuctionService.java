@@ -3,10 +3,9 @@ package org.example.bidflow.domain.auction.service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.bidflow.data.AuctionStatus;
-import org.example.bidflow.data.Role;
 import org.example.bidflow.domain.auction.dto.*;
 import org.example.bidflow.domain.auction.entity.Auction;
+import org.example.bidflow.domain.auction.entity.AuctionStatus;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.example.bidflow.domain.bid.repository.BidRepository;
 import org.example.bidflow.domain.bid.entity.Bid;
@@ -15,10 +14,11 @@ import org.example.bidflow.domain.category.repository.CategoryRepository;
 import org.example.bidflow.domain.category.service.CategoryService;
 import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.product.repository.ProductRepository;
+import org.example.bidflow.domain.user.entity.Role;
 import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.annotation.HasRole;
-import org.example.bidflow.global.app.RedisCommon;
-import org.example.bidflow.global.app.AuctionSchedulerService;
+import org.example.bidflow.global.service.AuctionSchedulerService;
+import org.example.bidflow.global.utils.RedisCommon;
 import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.stereotype.Service;
@@ -26,7 +26,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
-import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
 
 @Service
 @RequiredArgsConstructor
@@ -225,10 +224,10 @@ public class AuctionService {
         Auction auction = auctionRepository.findByAuctionId(auctionId)
                 .orElseThrow(() -> new ServiceException("400-1", "경매가 존재하지 않습니다."));
 
-        /*// TODO: 경매 상태 검증 -> 상태 변화에 따른 해당 로직 필요성 검증
+        // 경매 상태 검증
         if (!auction.getStatus().equals(AuctionStatus.ONGOING)) {
             throw new ServiceException("400-2", "진행 중인 경매가 아닙니다.");
-        }*/
+        }
 
         return auction;
     }

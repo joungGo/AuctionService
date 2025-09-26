@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.config;
 
 import org.springframework.context.annotation.Configuration;
 

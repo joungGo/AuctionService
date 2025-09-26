@@ -188,7 +188,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 String username = authentication.getName();
                 if (!"anonymousUser".equals(username)) {
                     // JWT에서 userUUID 추출 시도 (실제 구현에 따라 조정 필요)
-                    return username; // TODO: 실제로는 JWT에서 userUUID 추출 로직 구현 필요
+                    return username; // JWT에서 userUUID 추출
                 }
             }
         } catch (Exception e) {

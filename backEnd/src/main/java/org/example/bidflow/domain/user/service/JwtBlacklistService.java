@@ -3,7 +3,7 @@ package org.example.bidflow.domain.user.service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import lombok.RequiredArgsConstructor;
-import org.example.bidflow.global.app.RedisCommon;
+import org.example.bidflow.global.utils.RedisCommon;
 import org.example.bidflow.global.exception.ServiceException;
 import org.example.bidflow.global.utils.JwtProvider;
 import org.springframework.http.HttpStatus;

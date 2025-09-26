@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.ws;
 
 import lombok.RequiredArgsConstructor;
 import org.example.bidflow.global.config.OriginConfig;

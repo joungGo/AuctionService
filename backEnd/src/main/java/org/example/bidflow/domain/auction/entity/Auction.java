@@ -2,7 +2,6 @@ package org.example.bidflow.domain.auction.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.example.bidflow.data.AuctionStatus;
 import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.winner.entity.Winner;

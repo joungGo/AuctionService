@@ -1,8 +1,8 @@
-package org.example.bidflow.global.app.job;
+package org.example.bidflow.global.event.job;
 
 import lombok.extern.slf4j.Slf4j;
-import org.example.bidflow.data.AuctionStatus;
 import org.example.bidflow.domain.auction.entity.Auction;
+import org.example.bidflow.domain.auction.entity.AuctionStatus;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;

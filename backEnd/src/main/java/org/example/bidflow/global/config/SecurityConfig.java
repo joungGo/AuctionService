@@ -1,7 +1,6 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.config;
 
 import lombok.RequiredArgsConstructor;
-import org.example.bidflow.global.config.OriginConfig;
 import org.example.bidflow.global.filter.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

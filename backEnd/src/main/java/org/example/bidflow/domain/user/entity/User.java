@@ -2,7 +2,6 @@ package org.example.bidflow.domain.user.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.example.bidflow.data.Role;
 import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.winner.entity.Winner;
 

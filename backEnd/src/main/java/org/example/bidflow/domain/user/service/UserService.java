@@ -2,8 +2,8 @@ package org.example.bidflow.domain.user.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.bidflow.data.Role;
 import org.example.bidflow.domain.user.dto.*;
+import org.example.bidflow.domain.user.entity.Role;
 import org.example.bidflow.domain.user.entity.User;
 import org.example.bidflow.domain.user.repository.UserRepository;
 import org.example.bidflow.global.exception.ServiceException;

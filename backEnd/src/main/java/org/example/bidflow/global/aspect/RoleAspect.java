@@ -4,7 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.example.bidflow.data.Role;
+import org.example.bidflow.domain.user.entity.Role;
 import org.example.bidflow.global.annotation.HasRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;

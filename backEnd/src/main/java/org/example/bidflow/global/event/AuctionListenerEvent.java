@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.event;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -7,6 +7,7 @@ import org.example.bidflow.domain.user.entity.User;
 import org.example.bidflow.domain.user.repository.UserRepository;
 import org.example.bidflow.domain.winner.entity.Winner;
 import org.example.bidflow.domain.winner.repository.WinnerRepository;
+import org.example.bidflow.global.utils.RedisCommon;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;

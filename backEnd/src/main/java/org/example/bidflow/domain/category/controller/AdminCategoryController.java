@@ -1,10 +1,10 @@
 package org.example.bidflow.domain.category.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.bidflow.data.Role;
 import org.example.bidflow.domain.category.dto.CategoryRequest;
 import org.example.bidflow.domain.category.dto.CategoryResponse;
 import org.example.bidflow.domain.category.service.CategoryService;
+import org.example.bidflow.domain.user.entity.Role;
 import org.example.bidflow.global.annotation.HasRole;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;

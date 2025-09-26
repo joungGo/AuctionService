@@ -1,4 +1,4 @@
-package org.example.bidflow.global.app;
+package org.example.bidflow.global.ws;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;

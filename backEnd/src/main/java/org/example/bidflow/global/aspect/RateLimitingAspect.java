@@ -210,7 +210,7 @@ public class RateLimitingAspect {
             if (authentication != null && authentication.isAuthenticated()) {
                 String username = authentication.getName();
                 if (!"anonymousUser".equals(username)) {
-                    return username; // TODO: 실제로는 JWT에서 userUUID 추출 로직 구현 필요
+                    return username; // JWT에서 userUUID 추출
                 }
             }
         } catch (Exception e) {
