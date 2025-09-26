@@ -22,8 +22,6 @@ public class RedisCommon {
     private final Gson gson;
     private final Duration timeUnit = Duration.ofSeconds(5);
 
-    /*@Value("${spring.data.redis.timeout}")
-    private Duration defaultExpireTime;*/
 
     /*
     opsForValue는 Redis의 문자열(String) 값을 다루기 위한 여러 가지 작업을 제공하는 인터페이스입니다.
@@ -61,16 +59,13 @@ public class RedisCommon {
         }
     }
 
-    /*public List<String> getAllKeys() {
-        return new ArrayList<>(template.keys("*"));
-    }*/
 
     // explain: redis 에 데이터 저장하기 - 단일 데이터 저장
     public <T> void setData(String key, T value /*Duration expiredTime: 데이터 만료시간*/) {
         try {
             String jsonValue = gson.toJson(value); // 객체를 JSON 형태의 문자열로 변환 = 직렬화
             template.opsForValue().set(key, jsonValue);
-            template.expire(key, /*defaultExpireTime*/ timeUnit);
+            template.expire(key, timeUnit);
             log.debug("[Redis 저장] 데이터 저장 성공 - Key: {}", key);
         } catch (Exception e) {
             log.error("[Redis 오류] 데이터 저장 실패 - Key: {}, 오류: {}", key, e.getMessage(), e);
@@ -87,8 +82,6 @@ public class RedisCommon {
         }
 
         template.opsForValue().multiSet(jsonMap);  // 다중 키-값 쌍을 한 번의 명령으로 저장.
-//        template.opsForValue().setIfAbsent() // 키가 존재하지 않을 때만 값을 설정
-//        template.opsForValue().setIfPresent() // 키가 존재할 때만 값을 설정
     }
 
     // explain: redis 에 순위 및 랭킹을 매기기 위해 값을 저장
@@ -114,9 +107,6 @@ public class RedisCommon {
 
     // explain: redis 에서 상위 N개의 데이터를 가져오기
     public <T> List<T> getTopNFromSortedSet(String key, int n, Class<T> clazz) {
-//        template.opsForZSet().range(key, 0, -1); //  key에 저장된 값들을 0부터 -1까지 가져온다. 즉, 전체 데이터를 가져온다.
-//        template.opsForZSet().range(key, 0, -1);
-
         Set<String> jsonValues = template.opsForZSet().reverseRange(key, 0, n - 1);
         List<T> resultSet = new ArrayList<T>();
 
@@ -134,7 +124,6 @@ public class RedisCommon {
     public <T> void addToListLeft(String key, T value) {
         String jsonValue = gson.toJson(value);
         template.opsForList().leftPush(key, jsonValue);
-//        template.expire(key, defaultExpireTime); // 만료시간을 넣지 않으면 기본적으로 0으로 설정된다.
     }
 
     // explain: Redis List의 오른쪽(앞)에 값을 추가
@@ -238,29 +227,6 @@ public class RedisCommon {
         template.opsForHash().delete(key, field);
     }
 
-    /*// explain: 키의 값과 남은 TTL을 함께 조회. - 캐시 유효 기간 확인.
-    public <T> ValueWithTTL<T> GetValueWithTTl(String key, Class<T> clazz) { // 값과 TTL을 함께 반환
-        T value = null;                                                       // 반환할 값 초기화
-        Long ttl = null;                                                      // TTL 초기화
-
-        try {
-            List<Object> results = template.executePipelined(new RedisCallback<Object>() { // 파이프라인으로 다중 명령 실행
-                public Object doInRedis(RedisConnection connection) throws DataAccessException {
-                    StringRedisConnection conn = (StringRedisConnection) connection; // 문자열 기반 연결로 캐스팅
-                    conn.get(key);                                           // 키의 값 조회
-                    conn.ttl(key);                                           // 키의 남은 TTL(초 단위) 조회
-                    return null;                                             // 파이프라인에서는 null 반환
-                }
-            });
-
-            value = (T) gson.fromJson((String) results.get(0), clazz);       // 첫 번째 결과(값)를 JSON 역직렬화
-            ttl = (Long) results.get(1);                                     // 두 번째 결과(TTL) 할당
-        } catch (Exception e) {
-            e.printStackTrace();                                             // 예외 발생 시 스택 출력
-        }
-
-        return new ValueWithTTL<T>(value, ttl);                              // 값과 TTL을 담은 객체 반환
-    }*/
 
     public void setExpireAt(String key, LocalDateTime expireTime) {
         LocalDateTime now = LocalDateTime.now();
