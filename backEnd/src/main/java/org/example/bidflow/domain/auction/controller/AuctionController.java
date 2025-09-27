@@ -6,6 +6,7 @@ import org.example.bidflow.domain.auction.dto.AuctionCheckResponse;
 import org.example.bidflow.domain.auction.dto.AuctionDetailResponse;
 import org.example.bidflow.domain.auction.dto.AuctionBidDetailResponse;
 import org.example.bidflow.domain.auction.service.AuctionService;
+import org.example.bidflow.global.controller.BaseController;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +25,7 @@ import java.util.Set;
 @Slf4j
 @RequiredArgsConstructor
 @RequestMapping("/api/auctions")
-public class AuctionController {
+public class AuctionController extends BaseController {
 
     private final AuctionService auctionService;
 

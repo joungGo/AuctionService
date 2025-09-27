@@ -3,6 +3,7 @@ package org.example.bidflow.domain.category.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.bidflow.domain.category.dto.CategoryResponse;
 import org.example.bidflow.domain.category.service.CategoryService;
+import org.example.bidflow.global.controller.BaseController;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,7 +13,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/categories")
-public class CategoryController {
+public class CategoryController extends BaseController {
 
     private final CategoryService categoryService;
 

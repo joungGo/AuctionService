@@ -7,6 +7,7 @@ import org.example.bidflow.domain.auction.dto.AuctionCreateResponse;
 import org.example.bidflow.domain.auction.dto.AuctionRequest;
 import org.example.bidflow.domain.auction.dto.AuctionStatisticsResponse;
 import org.example.bidflow.domain.auction.service.AuctionService;
+import org.example.bidflow.global.controller.BaseController;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/auctions")
 @RequiredArgsConstructor
-public class AdminAuctionController {
+public class AdminAuctionController extends BaseController {
     private final AuctionService auctionService;
 
     // 경매 등록 컨트롤러

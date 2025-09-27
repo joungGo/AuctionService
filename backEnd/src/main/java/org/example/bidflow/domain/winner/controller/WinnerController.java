@@ -3,6 +3,7 @@ package org.example.bidflow.domain.winner.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.bidflow.domain.winner.dto.WinnerCheckResponse;
 import org.example.bidflow.domain.winner.service.WinnerService;
+import org.example.bidflow.global.controller.BaseController;
 import org.example.bidflow.global.dto.RsData;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/auctions")
 @RequiredArgsConstructor
-public class WinnerController {
+public class WinnerController extends BaseController {
     private final WinnerService winnerService;
 
     // 낙찰 내역 조회 컨트롤러

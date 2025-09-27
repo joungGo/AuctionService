@@ -10,6 +10,7 @@ import org.example.bidflow.domain.user.entity.User;
 import org.example.bidflow.domain.user.service.JwtBlacklistService;
 import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.domain.user.service.EmailService;
+import org.example.bidflow.global.controller.BaseController;
 import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.utils.CookieUtil;
 import org.example.bidflow.global.utils.JwtProvider;
@@ -27,7 +28,7 @@ import org.example.bidflow.domain.user.service.FavoriteService;
 @RestController
 @RequestMapping("/api/auth")
 @Slf4j
-public class UserController {
+public class UserController extends BaseController {
 
     private final UserService userService;
     private final JwtBlacklistService blacklistService;
@@ -39,41 +40,45 @@ public class UserController {
     // 회원가입
     @PostMapping("/signup")
     public ResponseEntity<RsData<UserSignUpResponse>> signup(@Valid @RequestBody UserSignUpRequest request) {
-
-        UserSignUpResponse response = userService.signup(request);
-
-        // 회원가입 성공 시 응답 데이터 생성 (201: Created)
-        RsData<UserSignUpResponse> rsData = new RsData<>("201", "회원가입이 완료되었습니다.", response);
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(rsData);
+        long startTime = startOperation("signup", "회원가입");
+        try {
+            UserSignUpResponse response = userService.signup(request);
+            endOperation("signup", "회원가입", startTime);
+            return createdResponse("회원가입이 완료되었습니다.", response);
+        } catch (Exception e) {
+            endOperation("signup", "회원가입", startTime);
+            throw e;
+        }
     }
 
 
     @PostMapping("/login")
     public ResponseEntity<RsData<UserSignInResponse>> signin(@Valid @RequestBody UserSignInRequest request,
                                                               HttpServletResponse response) {
+        long startTime = startOperation("signin", "로그인");
+        try {
+            // 로그인 서비스 호출
+            UserSignInResponse loginResponse = userService.login(request);
 
-        // 로그인 서비스 호출
-        UserSignInResponse loginResponse = userService.login(request);
+            // JWT 토큰을 쿠키에 저장
+            cookieUtil.addJwtCookie(response, loginResponse.getToken());
 
-        // JWT 토큰을 쿠키에 저장
-        cookieUtil.addJwtCookie(response, loginResponse.getToken());
+            // 쿠키 기반 인증으로 변경하여 응답에서 토큰 제거
+            UserSignInResponse responseWithoutToken = UserSignInResponse.builder()
+                    .userUUID(loginResponse.getUserUUID())
+                    .nickname(loginResponse.getNickname())
+                    .email(loginResponse.getEmail())
+                    .token(null)  // 쿠키에 저장되므로 응답에 포함하지 않음
+                    .build();
 
-        // 쿠키 기반 인증으로 변경하여 응답에서 토큰 제거
-        UserSignInResponse responseWithoutToken = UserSignInResponse.builder()
-                .userUUID(loginResponse.getUserUUID())
-                .nickname(loginResponse.getNickname())
-                .email(loginResponse.getEmail())
-                .token(null)  // 쿠키에 저장되므로 응답에 포함하지 않음
-                .build();
-
-        // 성공 응답 생성
-        RsData<UserSignInResponse> rsData = new RsData<>("200", "로그인이 완료되었습니다.", responseWithoutToken);
-
-        log.info("[로그인 성공] 쿠키 기반 인증 완료 - userUUID: {}", loginResponse.getUserUUID());
-        
-        // HTTP 200 OK 응답 반환
-        return ResponseEntity.ok(rsData);
+            log.info("[로그인 성공] 쿠키 기반 인증 완료 - userUUID: {}", loginResponse.getUserUUID());
+            
+            endOperation("signin", "로그인", startTime);
+            return successResponse("로그인이 완료되었습니다.", responseWithoutToken);
+        } catch (Exception e) {
+            endOperation("signin", "로그인", startTime);
+            throw e;
+        }
     }
 
     // 인증 상태 확인 API (프론트엔드에서 사용)

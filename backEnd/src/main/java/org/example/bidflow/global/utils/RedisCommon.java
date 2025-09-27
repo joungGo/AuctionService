@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.bidflow.global.constants.BusinessConstants;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 public class RedisCommon {
     private final RedisTemplate<String, String> template;
     private final Gson gson;
-    private final Duration timeUnit = Duration.ofSeconds(5);
+    private final Duration timeUnit = BusinessConstants.REDIS_DEFAULT_EXPIRE_TIME;
 
 
     /*
