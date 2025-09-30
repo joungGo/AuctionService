@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
 
 /**
@@ -31,15 +32,15 @@ public class RedisPubSubConfig {
         container.addMessageListener(new MessageListenerAdapter(redisEventListener), 
                 new ChannelTopic("main:status-changes"));
         
-        // 카테고리별 채널 구독 (동적 구독은 추후 구현)
-        // container.addMessageListener(new MessageListenerAdapter(redisEventListener), 
-        //         new ChannelTopic("category:*:new-auctions"));
-        // container.addMessageListener(new MessageListenerAdapter(redisEventListener), 
-        //         new ChannelTopic("category:*:status-changes"));
+        // 카테고리별 채널 구독 (패턴 구독)
+        container.addMessageListener(new MessageListenerAdapter(redisEventListener),
+                new PatternTopic("category:*:new-auctions"));
+        container.addMessageListener(new MessageListenerAdapter(redisEventListener),
+                new PatternTopic("category:*:status-changes"));
         
-        // 경매별 채널 구독 (동적 구독은 추후 구현)
-        // container.addMessageListener(new MessageListenerAdapter(redisEventListener), 
-        //         new ChannelTopic("auction:*"));
+        // 경매별 채널 구독 (패턴 구독)
+        container.addMessageListener(new MessageListenerAdapter(redisEventListener),
+                new PatternTopic("auction:*"));
         
         return container;
     }
