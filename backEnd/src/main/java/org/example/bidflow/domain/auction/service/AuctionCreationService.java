@@ -14,6 +14,7 @@ import org.example.bidflow.domain.product.repository.ProductRepository;
 import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.service.AuctionSchedulerService;
 import org.example.bidflow.global.utils.RedisCommon;
+import org.example.bidflow.global.messaging.publisher.EventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +41,7 @@ public class AuctionCreationService {
     private final RedisCommon redisCommon;
     private final AuctionSchedulerService auctionSchedulerService;
     private final AuctionRedisService auctionRedisService;
+    private final EventPublisher eventPublisher;
 
     /**
      * 경매를 생성합니다.
@@ -66,6 +68,15 @@ public class AuctionCreationService {
         
         // 경매 스케줄 등록
         auctionSchedulerService.scheduleAuction(auction);
+        
+        // 새 경매 이벤트 발행 (관심사별 타겟팅)
+        eventPublisher.publishNewAuction(
+            auction.getAuctionId(),
+            category != null ? category.getCategoryId() : null,
+            product.getProductName(),
+            auction.getStartPrice().longValue(),
+            product.getImageUrl()
+        );
 
         // 성공 응답 반환
         return new RsData<>("201", "경매가 등록되었습니다.", AuctionCreateResponse.from(auction));

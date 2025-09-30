@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.entity.AuctionStatus;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
+import org.example.bidflow.global.messaging.publisher.EventPublisher;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
@@ -17,6 +18,9 @@ public class AuctionStartJob implements Job {
 
     @Autowired
     private AuctionRepository auctionRepository;
+    
+    @Autowired
+    private EventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -33,6 +37,15 @@ public class AuctionStartJob implements Job {
             if (auction.getStatus() == AuctionStatus.UPCOMING) {
                 auction.setStatus(AuctionStatus.ONGOING);
                 auctionRepository.save(auction);
+                
+                // 경매 상태 변경 이벤트 발행 (관심사별 타겟팅)
+                eventPublisher.publishAuctionStatusChange(
+                    auction.getAuctionId(),
+                    auction.getProduct().getCategory() != null ? auction.getProduct().getCategory().getCategoryId() : null,
+                    "ONGOING",
+                    auction.getStartPrice().longValue() // 현재 입찰가 (시작가로 초기화)
+                );
+                
                 log.info("[AuctionStartJob] 경매 시작 완료 - 경매 ID: {}, 상품명: {}", auctionId, auction.getProduct().getProductName());
             } else {
                 log.warn("[AuctionStartJob] 경매 상태가 UPCOMING이 아님 - 경매 ID: {}, 현재 상태: {}", auctionId, auction.getStatus());

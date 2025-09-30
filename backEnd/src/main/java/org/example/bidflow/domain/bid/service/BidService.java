@@ -15,6 +15,7 @@ import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.service.BaseService;
 import org.example.bidflow.global.utils.RedisCommon;
 import org.example.bidflow.global.exception.ServiceException;
+import org.example.bidflow.global.messaging.publisher.EventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,7 @@ public class BidService extends BaseService {
     private final UserService userService;
     private final BidRepository bidRepository;
     private final RedisCommon redisCommon;
+    private final EventPublisher eventPublisher;
 
     @Transactional
     public BidCreateResponse createBid(Long auctionId, AuctionBidRequest request, String userUUID) {
@@ -51,6 +53,14 @@ public class BidService extends BaseService {
             
             // DB 저장
             Bid bid = saveBidToDatabase(context);
+            
+            // 입찰 업데이트 이벤트 발행 (해당 경매 구독자에게만)
+            eventPublisher.publishBidUpdate(
+                context.getAuctionId(),
+                (long) context.getRequest().getAmount(),
+                context.getUser().getNickname(),
+                context.getUserUUID()
+            );
             
             BidCreateResponse response = BidCreateResponse.from(bid);
             endOperation("createBid", "경매 입찰 처리", startTime);
