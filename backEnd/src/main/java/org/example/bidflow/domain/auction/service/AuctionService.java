@@ -8,23 +8,21 @@ import org.example.bidflow.domain.auction.entity.Auction;
 import org.example.bidflow.domain.auction.entity.AuctionStatus;
 import org.example.bidflow.domain.auction.repository.AuctionRepository;
 import org.example.bidflow.domain.bid.repository.BidRepository;
-import org.example.bidflow.domain.bid.entity.Bid;
 import org.example.bidflow.domain.category.entity.Category;
 import org.example.bidflow.domain.category.repository.CategoryRepository;
 import org.example.bidflow.domain.category.service.CategoryService;
-import org.example.bidflow.domain.product.entity.Product;
 import org.example.bidflow.domain.product.repository.ProductRepository;
 import org.example.bidflow.domain.user.entity.Role;
 import org.example.bidflow.domain.user.service.UserService;
 import org.example.bidflow.global.annotation.HasRole;
 import org.example.bidflow.global.service.AuctionSchedulerService;
+import org.example.bidflow.global.messaging.publisher.EventPublisher;
 import org.example.bidflow.global.service.BaseService;
 import org.example.bidflow.global.utils.RedisCommon;
 import org.example.bidflow.global.dto.RsData;
 import org.example.bidflow.global.exception.ServiceException;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,17 +32,18 @@ import java.util.stream.Collectors;
 public class AuctionService extends BaseService {
 
     private final AuctionRepository auctionRepository;
-    private final BidRepository bidRepository;
-    private final ProductRepository productRepository;
-    private final CategoryRepository categoryRepository;
-    private final RedisCommon redisCommon;
+    private final BidRepository bidRepository; // 임시
+    private final ProductRepository productRepository; // 임시
+    private final CategoryRepository categoryRepository; // 임시
+    private final RedisCommon redisCommon; // 임시
     private final UserService userService;
     private final CategoryService categoryService;
-    private final AuctionSchedulerService auctionSchedulerService;
+    private final AuctionSchedulerService auctionSchedulerService; // 임시
     private final AuctionRedisService auctionRedisService;
     private final AuctionStatisticsService auctionStatisticsService;
     private final AuctionMaintenanceService auctionMaintenanceService;
     private final AuctionCreationService auctionCreationService;
+    private final EventPublisher eventPublisher;
 
     // 사용자-모든 경매 목록을 조회하고 AuctionResponse DTO 리스트로 변환
     public List<AuctionCheckResponse> getAllAuctions()  {
@@ -107,6 +106,39 @@ public class AuctionService extends BaseService {
                 .orElseThrow(() -> new IllegalArgumentException("진행 중인 경매를 찾을 수 없습니다."));// 최고 입찰가 찾기
 
         auction.setStatus(AuctionStatus.FINISHED);
+    }
+
+    // 관리자 수동 상태 변경 (UPCOMING/ONGOING/FINISHED)
+    @HasRole(Role.ADMIN)
+    @Transactional
+    public RsData<String> updateAuctionStatus(Long auctionId, String newStatus) {
+        Auction auction = auctionRepository.findByAuctionId(auctionId)
+                .orElseThrow(() -> new IllegalArgumentException("경매를 찾을 수 없습니다."));
+
+        AuctionStatus target;
+        try {
+            target = AuctionStatus.valueOf(newStatus);
+        } catch (IllegalArgumentException e) {
+            throw new ServiceException("400", "유효하지 않은 상태 값입니다. (UPCOMING|ONGOING|FINISHED)");
+        }
+
+        auction.setStatus(target);
+        auctionRepository.save(auction);
+
+        Long categoryId = auction.getProduct() != null && auction.getProduct().getCategory() != null
+                ? auction.getProduct().getCategory().getCategoryId()
+                : null;
+
+        // 현재가 조회(목록 반영용)
+        Integer amount = auctionRedisService.getCurrentBidAmount(auction.getAuctionId(), auction.getStartPrice());
+        eventPublisher.publishAuctionStatusChange(
+                auction.getAuctionId(),
+                categoryId,
+                target.name(),
+                amount != null ? amount.longValue() : (auction.getStartPrice() != null ? auction.getStartPrice().longValue() : 0L)
+        );
+
+        return new RsData<>("200", "경매 상태가 변경되었습니다.", target.name());
     }
 
     // 경매 데이터 검증 후 DTO 반환
