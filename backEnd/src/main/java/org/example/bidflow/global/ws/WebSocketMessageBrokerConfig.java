@@ -25,6 +25,7 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
     private final JwtPrincipalHandshakeHandler jwtPrincipalHandshakeHandler;
     private final OriginConfig originConfig;
     private final StompChannelLoggingInterceptor stompChannelLoggingInterceptor;
+    private final AuthStompInterceptor authStompInterceptor;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
@@ -34,7 +35,8 @@ public class WebSocketMessageBrokerConfig implements WebSocketMessageBrokerConfi
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(stompChannelLoggingInterceptor);
+        // 로깅 → 권한 검증 순서로 인터셉터 등록
+        registration.interceptors(stompChannelLoggingInterceptor, authStompInterceptor);
     }
     
     @Override
