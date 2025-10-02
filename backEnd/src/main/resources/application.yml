@@ -98,6 +98,9 @@ logging:
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
   level:
     root: INFO
+    # global messaging 로깅
+    org.example.bidflow.global.messaging: DEBUG
+
     # Hibernate SQL 로깅
     org.hibernate.SQL: DEBUG
     org.hibernate.orm.jdbc.bind: TRACE

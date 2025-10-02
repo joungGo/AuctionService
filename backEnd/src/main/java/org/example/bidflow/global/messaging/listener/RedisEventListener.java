@@ -3,6 +3,7 @@ package org.example.bidflow.global.messaging.listener;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.bidflow.global.logging.StructuredLogger;
 import org.example.bidflow.global.messaging.dto.AuctionEventPayload;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
@@ -26,53 +27,73 @@ public class RedisEventListener implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         String channel = null;
         String payload = null;
+        long startTime = System.currentTimeMillis();
         
         try {
             channel = new String(message.getChannel());
             payload = new String(message.getBody());
             
-            log.debug("📨 [Redis] 메시지 수신: channel={}, payload={}", channel, payload);
+            // 구조화된 로깅: 메시지 수신
+            StructuredLogger.logRedisMessageReceived(channel, payload.length());
             
             // JSON 파싱 및 검증
-            AuctionEventPayload eventPayload = parseAndValidatePayload(payload);
+            AuctionEventPayload eventPayload = parseAndValidatePayload(payload, channel);
             if (eventPayload == null) {
-                log.warn("⚠️ [Redis] 메시지 파싱 실패 - 스킵 처리: channel={}, payload={}", channel, payload);
-                return;
+                return; // 파싱/검증 실패 시 이미 구조화된 로그 출력됨
             }
             
             // Redis 채널을 STOMP 토픽으로 매핑
             String stompTopic = mapChannelToStompTopic(channel);
             if (stompTopic != null) {
-                // STOMP 토픽으로 메시지 전송
-                messagingTemplate.convertAndSend(stompTopic, eventPayload);
-                log.debug("📤 [STOMP] 메시지 전송: topic={}, eventType={}, auctionId={}", 
-                         stompTopic, eventPayload.getEventType(), eventPayload.getAuctionId());
+                try {
+                    // STOMP 토픽으로 메시지 전송
+                    messagingTemplate.convertAndSend(stompTopic, eventPayload);
+                    
+                    // 구조화된 로깅: 메시지 처리 성공
+                    long processingTime = System.currentTimeMillis() - startTime;
+                    StructuredLogger.logRedisEventSuccess(channel, eventPayload.getEventType(), 
+                                                         eventPayload.getAuctionId(), stompTopic, processingTime);
+                } catch (Exception e) {
+                    // 구조화된 로깅: STOMP 전송 실패
+                    StructuredLogger.logStompSendFailure(stompTopic, eventPayload.getEventType(), 
+                                                        eventPayload.getAuctionId(), e.getMessage());
+                    throw e;
+                }
+            } else {
+                // 구조화된 로깅: 알 수 없는 채널
+                StructuredLogger.logUnknownChannel(channel);
             }
             
         } catch (Exception e) {
-            log.error("❌ [Redis] 메시지 처리 실패: channel={}, payload={}, error={}", 
-                     channel, payload, e.getMessage(), e);
+            log.error("❌ [Redis] 메시지 처리 실패: channel={}, error={}", 
+                     channel, e.getMessage(), e);
         }
     }
     
     /**
      * JSON 파싱 및 스키마 검증
      */
-    private AuctionEventPayload parseAndValidatePayload(String payload) {
+    private AuctionEventPayload parseAndValidatePayload(String payload, String channel) {
         try {
             // JSON 파싱
             AuctionEventPayload eventPayload = objectMapper.readValue(payload, AuctionEventPayload.class);
             
             // 필수 필드 검증
             if (!isValidEventPayload(eventPayload)) {
-                log.warn("⚠️ [Redis] 메시지 스키마 검증 실패: payload={}", payload);
+                // 구조화된 로깅: 검증 실패
+                StructuredLogger.logValidationFailure(
+                    eventPayload.getEventType(), 
+                    eventPayload.getAuctionId(), 
+                    "필수 필드 검증 실패"
+                );
                 return null;
             }
             
             return eventPayload;
             
         } catch (Exception e) {
-            log.error("❌ [Redis] JSON 파싱 실패: payload={}, error={}", payload, e.getMessage());
+            // 구조화된 로깅: 파싱 실패
+            StructuredLogger.logParsingFailure(channel, payload, e.getMessage());
             return null;
         }
     }
@@ -87,12 +108,12 @@ public class RedisEventListener implements MessageListener {
         
         // 필수 필드 검증
         if (payload.getEventType() == null || payload.getEventType().trim().isEmpty()) {
-            log.warn("⚠️ [Redis] eventType이 누락됨: payload={}", payload);
+            StructuredLogger.logValidationFailure(null, payload.getAuctionId(), "eventType 누락");
             return false;
         }
         
         if (payload.getAuctionId() == null || payload.getAuctionId() <= 0) {
-            log.warn("⚠️ [Redis] auctionId가 유효하지 않음: auctionId={}", payload.getAuctionId());
+            StructuredLogger.logValidationFailure(payload.getEventType(), payload.getAuctionId(), "auctionId 유효하지 않음");
             return false;
         }
         
@@ -107,7 +128,7 @@ public class RedisEventListener implements MessageListener {
             case "AUCTION_END":
                 return isValidAuctionEndPayload(payload);
             default:
-                log.warn("⚠️ [Redis] 알 수 없는 이벤트 타입: eventType={}", payload.getEventType());
+                StructuredLogger.logValidationFailure(payload.getEventType(), payload.getAuctionId(), "알 수 없는 이벤트 타입");
                 return false;
         }
     }
@@ -166,7 +187,7 @@ public class RedisEventListener implements MessageListener {
             return "/sub/auction/" + auctionId;
         }
         
-        log.warn("⚠️ [Redis] 알 수 없는 채널: {}", channel);
+        // 알 수 없는 채널은 onMessage에서 구조화된 로깅으로 처리됨
         return null;
     }
 }

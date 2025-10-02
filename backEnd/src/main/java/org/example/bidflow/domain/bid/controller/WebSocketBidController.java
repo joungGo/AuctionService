@@ -145,13 +145,15 @@ public class WebSocketBidController {
 
     /**
      * 세션에서 JWT 토큰 추출
+     * 쿠키 기반 인증: 세션 속성에서 "jwt-token" 키로 저장된 토큰 추출
      */
     private String extractTokenFromSession(SimpMessageHeaderAccessor headerAccessor) {
         if (headerAccessor == null || headerAccessor.getSessionAttributes() == null) {
             return null;
         }
         
-        Object tokenObj = headerAccessor.getSessionAttributes().get("jwt_token");
+        // 쿠키에서 추출한 토큰은 "jwt-token" 키로 저장됨 (하이픈 포함)
+        Object tokenObj = headerAccessor.getSessionAttributes().get("jwt-token");
         return tokenObj != null ? tokenObj.toString() : null;
     }
 

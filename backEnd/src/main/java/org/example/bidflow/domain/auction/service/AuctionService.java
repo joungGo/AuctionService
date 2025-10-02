@@ -219,8 +219,9 @@ public class AuctionService extends BaseService {
 
     // 경매 조회 및 상태 검증 메서드
     public Auction getAuctionWithValidation(Long auctionId) {
-        // 경매 조회
-        Auction auction = findByIdOrThrow(auctionRepository, auctionId, "경매");
+        // 경매 조회 (Category까지 Fetch Join으로 가져옴)
+        Auction auction = auctionRepository.findByAuctionId(auctionId)
+                .orElseThrow(() -> new ServiceException("404", "경매를 찾을 수 없습니다."));
 
         // 경매 상태 검증
         if (!auction.getStatus().equals(AuctionStatus.ONGOING)) {
