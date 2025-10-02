@@ -1,5 +1,6 @@
 package org.example.bidflow.global.messaging.publisher;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.bidflow.global.messaging.dto.AuctionEventPayload;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class RedisEventPublisher implements EventPublisher {
     
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper;
     
     // Redis 채널명 상수
     private static final String MAIN_NEW_AUCTIONS_CHANNEL = "main:new-auctions";
@@ -33,14 +35,17 @@ public class RedisEventPublisher implements EventPublisher {
                 "NEW_AUCTION", auctionId, productName, imageUrl, startPrice, startPrice, "UPCOMING", categoryId
             );
             
+            // JSON 문자열로 변환
+            String jsonPayload = serializePayload(payload);
+            
             // 메인 페이지 구독자에게 전송
-            redisTemplate.convertAndSend(MAIN_NEW_AUCTIONS_CHANNEL, payload);
+            redisTemplate.convertAndSend(MAIN_NEW_AUCTIONS_CHANNEL, jsonPayload);
             log.info("📢 [Redis] 새 경매 알림 발행 - 메인: auctionId={}, productName={}", auctionId, productName);
             
             // 카테고리 페이지 구독자에게 전송 (카테고리가 있는 경우)
             if (categoryId != null) {
                 String categoryChannel = CATEGORY_NEW_AUCTIONS_CHANNEL_PREFIX + categoryId + ":new-auctions";
-                redisTemplate.convertAndSend(categoryChannel, payload);
+                redisTemplate.convertAndSend(categoryChannel, jsonPayload);
                 log.info("📢 [Redis] 새 경매 알림 발행 - 카테고리: categoryId={}, auctionId={}", categoryId, auctionId);
             }
             
@@ -62,14 +67,17 @@ public class RedisEventPublisher implements EventPublisher {
                 .timestamp(System.currentTimeMillis())
                 .build();
             
+            // JSON 문자열로 변환
+            String jsonPayload = serializePayload(payload);
+            
             // 메인 페이지 구독자에게 전송
-            redisTemplate.convertAndSend(MAIN_STATUS_CHANGES_CHANNEL, payload);
+            redisTemplate.convertAndSend(MAIN_STATUS_CHANGES_CHANNEL, jsonPayload);
             log.info("📢 [Redis] 경매 상태 변경 알림 발행 - 메인: auctionId={}, status={}", auctionId, status);
             
             // 카테고리 페이지 구독자에게 전송 (카테고리가 있는 경우)
             if (categoryId != null) {
                 String categoryChannel = CATEGORY_STATUS_CHANGES_CHANNEL_PREFIX + categoryId + ":status-changes";
-                redisTemplate.convertAndSend(categoryChannel, payload);
+                redisTemplate.convertAndSend(categoryChannel, jsonPayload);
                 log.info("📢 [Redis] 경매 상태 변경 알림 발행 - 카테고리: categoryId={}, auctionId={}, status={}", 
                         categoryId, auctionId, status);
             }
@@ -92,9 +100,12 @@ public class RedisEventPublisher implements EventPublisher {
                 .timestamp(System.currentTimeMillis())
                 .build();
             
+            // JSON 문자열로 변환
+            String jsonPayload = serializePayload(payload);
+            
             // 해당 경매 구독자에게만 전송 (상세/입찰 페이지)
             String auctionChannel = AUCTION_EVENTS_CHANNEL_PREFIX + auctionId;
-            redisTemplate.convertAndSend(auctionChannel, payload);
+            redisTemplate.convertAndSend(auctionChannel, jsonPayload);
             log.info("📢 [Redis] 입찰 업데이트 알림 발행: auctionId={}, currentBid={}, bidder={}", 
                     auctionId, currentBid, bidderNickname);
             
@@ -109,14 +120,29 @@ public class RedisEventPublisher implements EventPublisher {
             // 종료 DTO 생성
             AuctionEventPayload payload = AuctionEventPayload.createEndPayload(auctionId, winnerNickname, winningBid);
             
+            // JSON 문자열로 변환
+            String jsonPayload = serializePayload(payload);
+            
             // 해당 경매 구독자에게만 전송 (상세/입찰 페이지)
             String auctionChannel = AUCTION_EVENTS_CHANNEL_PREFIX + auctionId;
-            redisTemplate.convertAndSend(auctionChannel, payload);
+            redisTemplate.convertAndSend(auctionChannel, jsonPayload);
             log.info("📢 [Redis] 경매 종료 알림 발행: auctionId={}, winner={}, winningBid={}", 
                     auctionId, winnerNickname, winningBid);
             
         } catch (Exception e) {
             log.error("❌ [Redis] 경매 종료 알림 발행 실패: auctionId={}, error={}", auctionId, e.getMessage());
+        }
+    }
+    
+    /**
+     * 객체를 JSON 문자열로 직렬화
+     */
+    private String serializePayload(AuctionEventPayload payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            log.error("❌ [Redis] JSON 직렬화 실패: payload={}, error={}", payload, e.getMessage());
+            throw new RuntimeException("JSON 직렬화 실패", e);
         }
     }
 }
