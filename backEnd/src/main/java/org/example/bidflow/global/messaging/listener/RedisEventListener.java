@@ -65,8 +65,20 @@ public class RedisEventListener implements MessageListener {
             }
             
         } catch (Exception e) {
-            log.error("❌ [Redis] 메시지 처리 실패: channel={}, error={}", 
-                     channel, e.getMessage(), e);
+            // 예외 타입 분류
+            String errorType = classifyErrorType(e);
+            
+            // 스택 트레이스 추출
+            String stackTrace = StructuredLogger.getStackTraceAsString(e);
+            
+            // 구조화된 로깅: 상세한 컨텍스트 정보와 함께 에러 로그 출력
+            StructuredLogger.logRedisListenerError(
+                channel, 
+                payload, 
+                errorType, 
+                e.getMessage(), 
+                stackTrace
+            );
         }
     }
     
@@ -163,6 +175,43 @@ public class RedisEventListener implements MessageListener {
     private boolean isValidAuctionEndPayload(AuctionEventPayload payload) {
         return payload.getWinnerNickname() != null && !payload.getWinnerNickname().trim().isEmpty() &&
                payload.getWinningBid() != null && payload.getWinningBid() > 0;
+    }
+    
+    /**
+     * 예외 타입 분류
+     * - 에러 타입별로 구분하여 나중에 메트릭 수집 및 분석 용이
+     */
+    private String classifyErrorType(Exception e) {
+        String exceptionClassName = e.getClass().getSimpleName();
+        
+        // JSON 파싱 관련 에러
+        if (exceptionClassName.contains("Json") || exceptionClassName.contains("Parse")) {
+            return "JSON_PARSING_ERROR";
+        }
+        
+        // 네트워크/연결 관련 에러
+        if (exceptionClassName.contains("Connection") || exceptionClassName.contains("Timeout") || 
+            exceptionClassName.contains("IO") || exceptionClassName.contains("Socket")) {
+            return "NETWORK_ERROR";
+        }
+        
+        // 메시지 전송 관련 에러
+        if (exceptionClassName.contains("Messaging") || exceptionClassName.contains("Send")) {
+            return "MESSAGING_ERROR";
+        }
+        
+        // 검증 관련 에러
+        if (exceptionClassName.contains("Validation") || exceptionClassName.contains("Illegal")) {
+            return "VALIDATION_ERROR";
+        }
+        
+        // NullPointerException
+        if (e instanceof NullPointerException) {
+            return "NULL_POINTER_ERROR";
+        }
+        
+        // 기타 에러
+        return "UNKNOWN_ERROR:" + exceptionClassName;
     }
     
     /**

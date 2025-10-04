@@ -104,6 +104,102 @@ public class StructuredLogger {
     }
     
     /**
+     * Redis 연결 상태 체크 성공 로그
+     */
+    public static void logRedisConnectionSuccess(long responseTimeMs) {
+        Map<String, Object> logData = new HashMap<>();
+        logData.put("event", "redis_connection_check");
+        logData.put("status", "success");
+        logData.put("responseTimeMs", responseTimeMs);
+        logData.put("timestamp", System.currentTimeMillis());
+        
+        log.info("✅ [Redis Health] 연결 상태 정상: {}", toJsonString(logData));
+    }
+    
+    /**
+     * Redis 연결 실패 로그
+     */
+    public static void logRedisConnectionFailure(String errorMessage, int consecutiveFailures) {
+        Map<String, Object> logData = new HashMap<>();
+        logData.put("event", "redis_connection_check");
+        logData.put("status", "failure");
+        logData.put("error", errorMessage);
+        logData.put("consecutiveFailures", consecutiveFailures);
+        logData.put("timestamp", System.currentTimeMillis());
+        
+        log.error("❌ [Redis Health] 연결 실패: {}", toJsonString(logData));
+    }
+    
+    /**
+     * Redis 연결 복구 로그
+     */
+    public static void logRedisConnectionRestored(long downTimeMs) {
+        Map<String, Object> logData = new HashMap<>();
+        logData.put("event", "redis_connection_restored");
+        logData.put("status", "success");
+        logData.put("downTimeMs", downTimeMs);
+        logData.put("timestamp", System.currentTimeMillis());
+        
+        log.info("🔄 [Redis Health] 연결 복구됨: {}", toJsonString(logData));
+    }
+    
+    /**
+     * Redis 리스너 에러 로그 (상세 컨텍스트 포함)
+     */
+    public static void logRedisListenerError(String channel, String payload, String errorType, String errorMessage, String stackTrace) {
+        Map<String, Object> logData = new HashMap<>();
+        logData.put("event", "redis_listener_error");
+        logData.put("status", "failure");
+        logData.put("channel", channel != null ? channel : "unknown");
+        logData.put("payloadLength", payload != null ? payload.length() : 0);
+        logData.put("payloadPreview", payload != null && payload.length() > 200 ? payload.substring(0, 200) + "..." : payload);
+        logData.put("errorType", errorType);
+        logData.put("errorMessage", errorMessage);
+        logData.put("stackTracePreview", stackTrace != null && stackTrace.length() > 500 ? stackTrace.substring(0, 500) + "..." : stackTrace);
+        logData.put("timestamp", System.currentTimeMillis());
+        
+        log.error("❌ [Redis Listener] 메시지 처리 실패: {}", toJsonString(logData));
+    }
+    
+    /**
+     * 예외에서 스택 트레이스 문자열 추출
+     */
+    public static String getStackTraceAsString(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append(throwable.getClass().getName()).append(": ").append(throwable.getMessage()).append("\n");
+        
+        StackTraceElement[] stackTrace = throwable.getStackTrace();
+        int limit = Math.min(stackTrace.length, 10); // 최대 10개 라인만
+        for (int i = 0; i < limit; i++) {
+            sb.append("\tat ").append(stackTrace[i].toString()).append("\n");
+        }
+        
+        if (stackTrace.length > 10) {
+            sb.append("\t... ").append(stackTrace.length - 10).append(" more\n");
+        }
+        
+        // Caused by 체인 (최상위 1개만)
+        Throwable cause = throwable.getCause();
+        if (cause != null && cause != throwable) {
+            sb.append("Caused by: ").append(cause.getClass().getName()).append(": ").append(cause.getMessage()).append("\n");
+            StackTraceElement[] causeTrace = cause.getStackTrace();
+            int causeLimit = Math.min(causeTrace.length, 5); // Caused by는 5줄만
+            for (int i = 0; i < causeLimit; i++) {
+                sb.append("\tat ").append(causeTrace[i].toString()).append("\n");
+            }
+            if (causeTrace.length > 5) {
+                sb.append("\t... ").append(causeTrace.length - 5).append(" more\n");
+            }
+        }
+        
+        return sb.toString();
+    }
+    
+    /**
      * Map을 예쁘게 포맷팅된 JSON 문자열로 변환
      */
     private static String toJsonString(Map<String, Object> data) {
