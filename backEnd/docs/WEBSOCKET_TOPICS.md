@@ -601,8 +601,8 @@ useEffect(() => {
 
 ## 참고 자료
 
-- [WEBSOCKET_ARCHITECTURE.md](./WEBSOCKET_ARCHITECTURE.md) - 전체 아키텍처
-- [EVENT_PAYLOAD_SCHEMA.md](./EVENT_PAYLOAD_SCHEMA.md) - 이벤트 스키마
+- [WEBSOCKET_ARCHITECTURE.md](WEBSOCKET_ARCHITECTURE.md) - 전체 아키텍처
+- [EVENT_PAYLOAD_SCHEMA.md](EVENT_PAYLOAD_SCHEMA.md) - 이벤트 스키마
 - [STOMP Protocol Specification](https://stomp.github.io/)
 
 ---

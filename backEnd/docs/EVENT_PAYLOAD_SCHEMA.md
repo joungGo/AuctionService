@@ -666,8 +666,8 @@ interface BidUpdateEvent {
 
 ## 참고 자료
 
-- [WEBSOCKET_ARCHITECTURE.md](./WEBSOCKET_ARCHITECTURE.md) - 전체 아키텍처
-- [WEBSOCKET_TOPICS.md](./WEBSOCKET_TOPICS.md) - 토픽 구독 규칙
+- [WEBSOCKET_ARCHITECTURE.md](WEBSOCKET_ARCHITECTURE.md) - 전체 아키텍처
+- [WEBSOCKET_TOPICS.md](WEBSOCKET_TOPICS.md) - 토픽 구독 규칙
 - [JSON Schema Specification](https://json-schema.org/)
 - [TypeScript Type Guards](https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates)
 

@@ -121,7 +121,7 @@ WebSocket과 Redis Pub/Sub를 활용하여 수천 명의 동시 사용자에게 
 비즈니스 로직 → EventPublisher → Redis Pub/Sub → RedisEventListener → STOMP Topic → Client
 ```
 
-자세한 아키텍처는 [WEBSOCKET_ARCHITECTURE.md](./WEBSOCKET_ARCHITECTURE.md)를 참조하세요.
+자세한 아키텍처는 [WEBSOCKET_ARCHITECTURE.md](WEBSOCKET_ARCHITECTURE.md)를 참조하세요.
 
 ---
 
@@ -374,9 +374,9 @@ ws://localhost:8080/ws
 ```
 
 자세한 내용은 다음 문서를 참조하세요:
-- [WebSocket 아키텍처](./WEBSOCKET_ARCHITECTURE.md)
-- [토픽 구독 규칙](./WEBSOCKET_TOPICS.md)
-- [이벤트 페이로드 스키마](./EVENT_PAYLOAD_SCHEMA.md)
+- [WebSocket 아키텍처](WEBSOCKET_ARCHITECTURE.md)
+- [토픽 구독 규칙](WEBSOCKET_TOPICS.md)
+- [이벤트 페이로드 스키마](EVENT_PAYLOAD_SCHEMA.md)
 
 ---
 
@@ -654,14 +654,14 @@ docker run -d \
 ## 관련 문서
 
 ### 아키텍처 및 설계
-- [WebSocket 아키텍처](./WEBSOCKET_ARCHITECTURE.md)
-- [WebSocket 토픽 구독 규칙](./WEBSOCKET_TOPICS.md)
-- [이벤트 페이로드 스키마](./EVENT_PAYLOAD_SCHEMA.md)
-- [HTTP 폴링 → WebSocket 마이그레이션 가이드](./MIGRATION_FROM_POLLING.md)
+- [WebSocket 아키텍처](WEBSOCKET_ARCHITECTURE.md)
+- [WebSocket 토픽 구독 규칙](WEBSOCKET_TOPICS.md)
+- [이벤트 페이로드 스키마](EVENT_PAYLOAD_SCHEMA.md)
+- [HTTP 폴링 → WebSocket 마이그레이션 가이드](MIGRATION_FROM_POLLING.md)
 
 ### 테스트 및 운영
-- [Redis 리스너 테스트 가이드](./REDIS_LISTENER_TEST_GUIDE.md)
-- [구조화된 로깅 테스트 가이드](./STRUCTURED_LOGGING_TEST_GUIDE.md)
+- [Redis 리스너 테스트 가이드](REDIS_LISTENER_TEST_GUIDE.md)
+- [구조화된 로깅 테스트 가이드](STRUCTURED_LOGGING_TEST_GUIDE.md)
 
 ---
 

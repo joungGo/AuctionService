@@ -736,9 +736,9 @@ git checkout v1.0-polling
 
 ## 참고 자료
 
-- [WEBSOCKET_ARCHITECTURE.md](./WEBSOCKET_ARCHITECTURE.md)
-- [WEBSOCKET_TOPICS.md](./WEBSOCKET_TOPICS.md)
-- [EVENT_PAYLOAD_SCHEMA.md](./EVENT_PAYLOAD_SCHEMA.md)
+- [WEBSOCKET_ARCHITECTURE.md](WEBSOCKET_ARCHITECTURE.md)
+- [WEBSOCKET_TOPICS.md](WEBSOCKET_TOPICS.md)
+- [EVENT_PAYLOAD_SCHEMA.md](EVENT_PAYLOAD_SCHEMA.md)
 - [Spring WebSocket Documentation](https://docs.spring.io/spring-framework/reference/web/websocket.html)
 
 ---
